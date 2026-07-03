@@ -87,10 +87,25 @@ The watcher records the command, working directory, start and finish times, and
 exit code. Delivery runs in the background and fails silently when the daemon
 is unavailable.
 
+## File watcher
+
+Start the polling watcher manually with one explicit workspace:
+
+```bash
+.venv/bin/python -m daemon_v2.file_watcher /Users/yugz/Projets/Pulse_V2
+```
+
+It reports created, modified, and deleted files to the local Pulse daemon.
+Technical paths such as `.git`, `.venv`, caches, `*.pyc`, `*.db`, and
+`.DS_Store` are ignored. The watcher keeps running silently if the daemon is
+unavailable. Stop it with `Ctrl-C`.
+
 ## V0 limits
 
-- Input is accepted through the local HTTP API and the optional Zsh watcher.
+- Input is accepted through the local HTTP API and optional terminal/file watchers.
 - Sessions use a fixed 30-minute inactivity gap.
 - Commands receive basic secret redaction, not shell-aware parsing.
 - SQLite is local and single-node; there is no retention or migration system yet.
 - The daemon has no authentication because it only binds to `127.0.0.1`.
+# watcher test
+# watcher test
