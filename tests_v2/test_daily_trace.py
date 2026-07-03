@@ -1,6 +1,10 @@
 from datetime import date, datetime, timedelta, timezone
 
-from daemon_v2.daily_trace import build_daily_trace, render_daily_trace_markdown
+from daemon_v2.daily_trace import (
+    build_daily_trace,
+    render_daily_trace_html,
+    render_daily_trace_markdown,
+)
 from daemon_v2.models import Activity
 from daemon_v2.trace_store import TraceStore
 
@@ -28,14 +32,15 @@ def test_builds_structured_daily_trace(tmp_path):
         "terminal_finished",
     ]
 
-    assert render_daily_trace_markdown(trace) == (
-        "# Trace du 2026-07-03\n"
-        "\n"
+    assert (
+        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-6:]) + "\n").lstrip()
+        == (
         "## Session 1 — 08:00–08:05\n"
         "\n"
         "- 08:00 · **file\\_changed** — Modified a.py\n"
         "- 08:05 · **terminal\\_finished** — Command succeeded: pytest\n"
         "  - CWD : /project\n"
+        )
     )
 
 
@@ -48,9 +53,13 @@ def test_renders_empty_daily_trace():
         "sessions": [],
     }
 
-    assert render_daily_trace_markdown(trace) == (
-        "# Trace du 2026-07-03\n\n_Aucune activité._\n"
-    )
+    markdown = render_daily_trace_markdown(trace)
+    assert "## Résumé" in markdown
+    assert "- Projet principal : Non détecté" in markdown
+    assert "- Sessions : 0" in markdown
+    assert "- Événements : 0" in markdown
+    assert "- Dernière activité : Aucune" in markdown
+    assert markdown.endswith("_Aucune activité._\n")
 
 
 def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
@@ -74,9 +83,9 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["sessions"][0]["activities"][0]["details"]["command"] == command
-    assert render_daily_trace_markdown(trace) == (
-        "# Trace du 2026-07-03\n"
-        "\n"
+    assert (
+        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-8:]) + "\n").lstrip()
+        == (
         "## Session 1 — 21:06–21:06\n"
         "\n"
         "- 21:06 · **terminal\\_finished** — Command succeeded:\n"
@@ -84,6 +93,7 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
         '  - `git commit -m "filter multiline terminal noise"`\n'
         "  - `git push`\n"
         "  - CWD : /project/Pulse\\_V2\n"
+        )
     )
 
 
@@ -109,13 +119,14 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["sessions"][0]["activities"][0]["details"]["path"] == absolute_path
-    assert render_daily_trace_markdown(trace) == (
-        "# Trace du 2026-07-03\n"
-        "\n"
+    assert (
+        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-5:]) + "\n").lstrip()
+        == (
         "## Session 1 — 21:20–21:20\n"
         "\n"
         "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
         "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
+        )
     )
 
 
@@ -168,14 +179,15 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["activity_count"] == 3
-    assert render_daily_trace_markdown(trace) == (
-        "# Trace du 2026-07-03\n"
-        "\n"
+    assert (
+        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-6:]) + "\n").lstrip()
+        == (
         "## Session 1 — 23:17–23:18\n"
         "\n"
         "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
         "  - Created `a.py` ×2\n"
         "  - Modified `b.py`\n"
+        )
     )
 
 
@@ -207,4 +219,98 @@ def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
 
     assert trace["session_count"] == 2
     assert markdown.count("Apps actives : ChatGPT") == 2
-    assert "ChatGPT ×2" not in markdown
+    assert markdown.count("- Apps actives : ChatGPT\n") == 2
+
+
+def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            "Modified /project/Pulse/a.py",
+            {
+                "path": "/project/Pulse/a.py",
+                "event": "modified",
+                "workspace": "/project/Pulse",
+            },
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=1),
+            "filesystem",
+            "Created /project/Pulse/b.py",
+            {
+                "path": "/project/Pulse/b.py",
+                "event": "created",
+                "workspace": "/project/Pulse",
+            },
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=2),
+            "filesystem",
+            "Modified /other/c.py",
+            {
+                "path": "/other/c.py",
+                "event": "modified",
+                "workspace": "/other",
+            },
+        ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(minutes=3),
+            "application",
+            "Activated ChatGPT",
+            {"app": "ChatGPT"},
+        ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(minutes=4),
+            "application",
+            "Activated ChatGPT",
+            {"app": "ChatGPT"},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=5),
+            "terminal",
+            "Command succeeded: git push",
+            {"command": "git push", "exit_code": 0, "cwd": "/project/Pulse"},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    markdown_lines = [
+        "Projet principal : Pulse",
+        "Workspace : /project/Pulse",
+        "Sessions : 1",
+        "Événements : 6",
+        "Commandes terminal : 1",
+        "Fichiers modifiés : 3",
+        "Apps principales : ChatGPT ×2",
+        "Dernière activité : terminal\\_finished — git push",
+    ]
+    for line in markdown_lines:
+        assert line in markdown
+    html_rows = [
+        "<dt>Projet principal</dt><dd>Pulse</dd>",
+        "<dt>Workspace</dt><dd>/project/Pulse</dd>",
+        "<dt>Sessions</dt><dd>1</dd>",
+        "<dt>Événements</dt><dd>6</dd>",
+        "<dt>Commandes terminal</dt><dd>1</dd>",
+        "<dt>Fichiers modifiés</dt><dd>3</dd>",
+        "<dt>Apps principales</dt><dd>ChatGPT ×2</dd>",
+        "<dt>Dernière activité</dt><dd>terminal_finished — git push</dd>",
+    ]
+    for row in html_rows:
+        assert row in html
+    assert "## Session 1" in markdown
+    assert "Session 1" in html
