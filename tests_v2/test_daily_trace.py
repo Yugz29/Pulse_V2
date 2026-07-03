@@ -51,3 +51,37 @@ def test_renders_empty_daily_trace():
     assert render_daily_trace_markdown(trace) == (
         "# Trace du 2026-07-03\n\n_Aucune activité._\n"
     )
+
+
+def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    occurred_at = datetime(2026, 7, 3, 21, 6, tzinfo=timezone.utc)
+    command = (
+        "git add .\n"
+        'git commit -m "filter multiline terminal noise"\n'
+        "git push"
+    )
+    store.append(
+        Activity(
+            "terminal_finished",
+            occurred_at,
+            "terminal",
+            f"Command succeeded: {command}",
+            {"command": command, "exit_code": 0, "cwd": "/project/Pulse_V2"},
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+
+    assert trace["sessions"][0]["activities"][0]["details"]["command"] == command
+    assert render_daily_trace_markdown(trace) == (
+        "# Trace du 2026-07-03\n"
+        "\n"
+        "## Session 1 — 21:06–21:06\n"
+        "\n"
+        "- 21:06 · **terminal\\_finished** — Command succeeded:\n"
+        "  - `git add .`\n"
+        '  - `git commit -m "filter multiline terminal noise"`\n'
+        "  - `git push`\n"
+        "  - CWD : /project/Pulse\\_V2\n"
+    )

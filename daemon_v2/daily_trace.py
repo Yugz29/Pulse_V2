@@ -18,6 +18,14 @@ def _display_time(value: str) -> str:
     return datetime.fromisoformat(value).strftime("%H:%M")
 
 
+def _markdown_inline_code(value: str) -> str:
+    fence = "`"
+    while fence in value:
+        fence += "`"
+    padding = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{fence}{padding}{value}{padding}{fence}"
+
+
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     lines = [f"# Trace du {trace['date']}", ""]
     if not trace["sessions"]:
@@ -32,9 +40,27 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         for activity in session["activities"]:
             occurred_at = _display_time(activity["occurred_at"])
             activity_type = _markdown_text(activity["type"])
-            summary = _markdown_text(activity["summary"])
-            lines.append(f"- {occurred_at} · **{activity_type}** — {summary}")
-            cwd = activity.get("details", {}).get("cwd")
+            details = activity.get("details", {})
+            command = details.get("command")
+            command_lines = (
+                [line.strip() for line in command.splitlines() if line.strip()]
+                if isinstance(command, str)
+                else []
+            )
+
+            if activity["type"] == "terminal_finished" and len(command_lines) > 1:
+                exit_code = details.get("exit_code")
+                status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
+                lines.append(
+                    f"- {occurred_at} · **{activity_type}** — Command {status}:"
+                )
+                for command_line in command_lines:
+                    lines.append(f"  - {_markdown_inline_code(command_line)}")
+            else:
+                summary = _markdown_text(activity["summary"])
+                lines.append(f"- {occurred_at} · **{activity_type}** — {summary}")
+
+            cwd = details.get("cwd")
             if cwd:
                 lines.append(f"  - CWD : {_markdown_text(cwd)}")
         lines.append("")
