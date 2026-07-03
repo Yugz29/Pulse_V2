@@ -38,6 +38,16 @@ def _display_file_path(path: str, workspace: str | None) -> str:
     return str(display_path)
 
 
+def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for activity in session["activities"]:
+        if activity["type"] == "app_activated":
+            app = activity.get("details", {}).get("app")
+            if app:
+                counts[app] = counts.get(app, 0) + 1
+    return counts
+
+
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     lines = [f"# Trace du {trace['date']}", ""]
     if not trace["sessions"]:
@@ -56,6 +66,8 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 if path:
                     file_change_counts[path] = file_change_counts.get(path, 0) + 1
         rendered_file_paths: set[str] = set()
+        app_activation_counts = _app_activation_counts(session)
+        rendered_app_activations = False
 
         for activity in session["activities"]:
             occurred_at = _display_time(activity["occurred_at"])
@@ -72,7 +84,17 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             path = details.get("path")
             workspace = details.get("workspace")
 
-            if activity["type"] == "file_changed" and event and path:
+            if activity["type"] == "app_activated":
+                if rendered_app_activations:
+                    continue
+                rendered_app_activations = True
+                apps = [
+                    f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
+                    for app, count in app_activation_counts.items()
+                ]
+                lines.append(f"- Apps actives : {', '.join(apps)}")
+                continue
+            elif activity["type"] == "file_changed" and event and path:
                 if path in rendered_file_paths:
                     continue
                 rendered_file_paths.add(path)
@@ -154,13 +176,26 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
                 if path:
                     file_change_counts[path] = file_change_counts.get(path, 0) + 1
         rendered_file_paths: set[str] = set()
+        app_activation_counts = _app_activation_counts(session)
+        rendered_app_activations = False
 
         for activity in session["activities"]:
             details = activity.get("details", {})
             path = details.get("path")
             workspace = details.get("workspace")
             event = details.get("event", details.get("change"))
-            if activity["type"] == "file_changed" and event and path:
+            display_type = activity["type"]
+            if activity["type"] == "app_activated":
+                if rendered_app_activations:
+                    continue
+                rendered_app_activations = True
+                apps = [
+                    f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
+                    for app, count in app_activation_counts.items()
+                ]
+                content = f"Apps actives : {', '.join(apps)}"
+                display_type = "applications"
+            elif activity["type"] == "file_changed" and event and path:
                 if path in rendered_file_paths:
                     continue
                 rendered_file_paths.add(path)
@@ -199,7 +234,7 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             body.append(
                 '<li class="event">'
                 f'<time>{_display_time(activity["occurred_at"])}</time>'
-                f'<span class="type">{escape(activity["type"])}</span>'
+                f'<span class="type">{escape(display_type)}</span>'
                 f'<div class="content">{content}{detail_html}</div></li>'
             )
         body.extend(["</ul>", "</section>"])

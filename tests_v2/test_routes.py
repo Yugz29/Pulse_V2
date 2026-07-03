@@ -31,16 +31,24 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     app = create_app(tmp_path / "trace.db")
     client = app.test_client()
 
-    response = client.post(
-        "/activities",
-        json={"type": "app_activated", "app": "Visual Studio Code"},
-    )
+    apps = ["ChatGPT", "Code", "ChatGPT", "Terminal"]
+    for app_name in apps:
+        response = client.post(
+            "/activities",
+            json={"type": "app_activated", "app": app_name},
+        )
+        assert response.status_code == 201
 
-    assert response.status_code == 201
-    assert "Activated Visual Studio Code" in client.get(
-        "/trace/today.md"
-    ).get_data(as_text=True)
-    assert "Activated Visual Studio Code" in client.get("/").get_data(as_text=True)
+    trace = client.get("/trace/today").get_json()
+    assert trace["activity_count"] == 4
+    assert [
+        activity["details"]["app"]
+        for activity in trace["sessions"][0]["activities"]
+    ] == apps
+
+    expected = "Apps actives : ChatGPT ×2, Code, Terminal"
+    assert expected in client.get("/trace/today.md").get_data(as_text=True)
+    assert expected in client.get("/").get_data(as_text=True)
 
 
 def test_today_markdown_route_returns_readable_markdown(tmp_path):

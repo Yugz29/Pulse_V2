@@ -143,3 +143,34 @@ def test_does_not_coalesce_same_file_across_sessions(tmp_path):
     assert trace["session_count"] == 2
     assert markdown.count("Modified `a.py`") == 2
     assert "×2" not in markdown
+
+
+def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc)
+    details = {"app": "ChatGPT"}
+    store.append(
+        Activity(
+            "app_activated",
+            first_at,
+            "application",
+            "Activated ChatGPT",
+            details,
+        )
+    )
+    store.append(
+        Activity(
+            "app_activated",
+            first_at + timedelta(hours=1),
+            "application",
+            "Activated ChatGPT",
+            details,
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+
+    assert trace["session_count"] == 2
+    assert markdown.count("Apps actives : ChatGPT") == 2
+    assert "ChatGPT ×2" not in markdown
