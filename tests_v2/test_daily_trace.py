@@ -117,3 +117,29 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
         "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
         "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
     )
+
+
+def test_does_not_coalesce_same_file_across_sessions(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    path = "/project/a.py"
+    details = {"path": path, "event": "modified", "workspace": "/project"}
+    first_at = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc)
+    store.append(
+        Activity("file_changed", first_at, "filesystem", f"Modified {path}", details)
+    )
+    store.append(
+        Activity(
+            "file_changed",
+            first_at + timedelta(hours=1),
+            "filesystem",
+            f"Modified {path}",
+            details,
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+
+    assert trace["session_count"] == 2
+    assert markdown.count("Modified `a.py`") == 2
+    assert "×2" not in markdown

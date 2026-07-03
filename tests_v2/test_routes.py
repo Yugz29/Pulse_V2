@@ -127,3 +127,38 @@ def test_file_changed_route_renders_relative_path_and_keeps_absolute_json(tmp_pa
     markdown = client.get("/trace/today.md").get_data(as_text=True)
     assert "Modified `daemon_v2/daily_trace.py`" in markdown
     assert f"Modified `{absolute_path}`" not in markdown
+
+
+def test_repeated_file_changes_are_raw_in_json_and_coalesced_in_markdown(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    client = app.test_client()
+    workspace = "/project"
+
+    for _ in range(3):
+        response = client.post(
+            "/activities",
+            json={
+                "type": "file_changed",
+                "path": f"{workspace}/a.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        )
+        assert response.status_code == 201
+    client.post(
+        "/activities",
+        json={
+            "type": "file_changed",
+            "path": f"{workspace}/b.py",
+            "event": "modified",
+            "workspace": workspace,
+        },
+    )
+
+    trace = client.get("/trace/today").get_json()
+    assert trace["activity_count"] == 4
+    assert len(trace["sessions"][0]["activities"]) == 4
+
+    markdown = client.get("/trace/today.md").get_data(as_text=True)
+    assert markdown.count("Modified `a.py` ×3") == 1
+    assert markdown.count("Modified `b.py`") == 1

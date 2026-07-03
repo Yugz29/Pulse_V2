@@ -38,6 +38,14 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         ended_at = _display_time(session["ended_at"])
         lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
 
+        file_change_counts: dict[str, int] = {}
+        for activity in session["activities"]:
+            if activity["type"] == "file_changed":
+                path = activity.get("details", {}).get("path")
+                if path:
+                    file_change_counts[path] = file_change_counts.get(path, 0) + 1
+        rendered_file_paths: set[str] = set()
+
         for activity in session["activities"]:
             occurred_at = _display_time(activity["occurred_at"])
             activity_type = _markdown_text(activity["type"])
@@ -54,15 +62,21 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             workspace = details.get("workspace")
 
             if activity["type"] == "file_changed" and event and path:
+                if path in rendered_file_paths:
+                    continue
+                rendered_file_paths.add(path)
                 display_path = Path(path)
                 if workspace:
                     try:
                         display_path = display_path.relative_to(Path(workspace))
                     except ValueError:
                         pass
+                count = file_change_counts[path]
+                count_suffix = f" ×{count}" if count > 1 else ""
                 lines.append(
                     f"- {occurred_at} · **{activity_type}** — "
-                    f"{str(event).capitalize()} {_markdown_inline_code(str(display_path))}"
+                    f"{str(event).capitalize()} "
+                    f"{_markdown_inline_code(str(display_path))}{count_suffix}"
                 )
             elif activity["type"] == "terminal_finished" and len(command_lines) > 1:
                 exit_code = details.get("exit_code")
