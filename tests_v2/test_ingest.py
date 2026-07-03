@@ -28,6 +28,26 @@ def test_rejects_unknown_activity_type():
         normalize_activity({"type": "browser_opened"})
 
 
+@pytest.mark.parametrize("event", ["modified", "created", "deleted"])
+def test_normalizes_file_changed_activity(event):
+    activity = normalize_activity(
+        {
+            "type": "file_changed",
+            "path": "/project/daemon_v2/daily_trace.py",
+            "event": event,
+            "workspace": "/project",
+        }
+    )
+
+    assert activity.source == "filesystem"
+    assert activity.details == {
+        "path": "/project/daemon_v2/daily_trace.py",
+        "event": event,
+        "workspace": "/project",
+    }
+    assert activity.summary == f"{event.capitalize()} /project/daemon_v2/daily_trace.py"
+
+
 @pytest.mark.parametrize(
     "command",
     [

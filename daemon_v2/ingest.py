@@ -88,13 +88,16 @@ def normalize_activity(payload: Any) -> Activity:
 
     if activity_type == "file_changed":
         path = _required_string(payload, "path")
-        change = payload.get("change", "modified")
-        if change not in {"created", "modified", "deleted"}:
-            raise InvalidActivity("change must be created, modified, or deleted")
-        normalized_path = str(Path(path).expanduser())
-        details = {"path": normalized_path, "change": change}
+        event = payload.get("event", payload.get("change", "modified"))
+        if event not in {"created", "modified", "deleted"}:
+            raise InvalidActivity("event must be created, modified, or deleted")
+        normalized_path = str(Path(path).expanduser().absolute())
+        details = {"path": normalized_path, "event": event}
+        if "workspace" in payload:
+            workspace = _required_string(payload, "workspace")
+            details["workspace"] = str(Path(workspace).expanduser().absolute())
         source = "filesystem"
-        summary = f"{change.capitalize()} {normalized_path}"
+        summary = f"{event.capitalize()} {normalized_path}"
     else:
         assert terminal_command is not None
         command = redact_command(terminal_command)

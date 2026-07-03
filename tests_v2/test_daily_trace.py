@@ -85,3 +85,35 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
         "  - `git push`\n"
         "  - CWD : /project/Pulse\\_V2\n"
     )
+
+
+def test_renders_file_path_relative_to_workspace(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    occurred_at = datetime(2026, 7, 3, 21, 20, tzinfo=timezone.utc)
+    absolute_path = "/Users/yugz/Projets/Pulse_V2/daemon_v2/daily_trace.py"
+    workspace = "/Users/yugz/Projets/Pulse_V2"
+    store.append(
+        Activity(
+            "file_changed",
+            occurred_at,
+            "filesystem",
+            f"Modified {absolute_path}",
+            {
+                "path": absolute_path,
+                "event": "modified",
+                "workspace": workspace,
+            },
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+
+    assert trace["sessions"][0]["activities"][0]["details"]["path"] == absolute_path
+    assert render_daily_trace_markdown(trace) == (
+        "# Trace du 2026-07-03\n"
+        "\n"
+        "## Session 1 — 21:20–21:20\n"
+        "\n"
+        "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
+        "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
+    )

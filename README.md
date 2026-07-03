@@ -44,6 +44,19 @@ curl -X POST http://127.0.0.1:5000/activities \
   }'
 ```
 
+Example file activity:
+
+```bash
+curl -X POST http://127.0.0.1:5000/activities \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "file_changed",
+    "path": "/Users/yugz/Projets/Pulse_V2/daemon_v2/daily_trace.py",
+    "event": "modified",
+    "workspace": "/Users/yugz/Projets/Pulse_V2"
+  }'
+```
+
 ## Read today's trace
 
 ```bash

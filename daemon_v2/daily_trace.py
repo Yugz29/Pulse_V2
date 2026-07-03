@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from pathlib import Path
 from typing import Any
 
 from .trace_store import TraceStore
@@ -48,7 +49,22 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 else []
             )
 
-            if activity["type"] == "terminal_finished" and len(command_lines) > 1:
+            event = details.get("event", details.get("change"))
+            path = details.get("path")
+            workspace = details.get("workspace")
+
+            if activity["type"] == "file_changed" and event and path:
+                display_path = Path(path)
+                if workspace:
+                    try:
+                        display_path = display_path.relative_to(Path(workspace))
+                    except ValueError:
+                        pass
+                lines.append(
+                    f"- {occurred_at} · **{activity_type}** — "
+                    f"{str(event).capitalize()} {_markdown_inline_code(str(display_path))}"
+                )
+            elif activity["type"] == "terminal_finished" and len(command_lines) > 1:
                 exit_code = details.get("exit_code")
                 status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
                 lines.append(
@@ -63,6 +79,8 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             cwd = details.get("cwd")
             if cwd:
                 lines.append(f"  - CWD : {_markdown_text(cwd)}")
+            if workspace:
+                lines.append(f"  - Workspace : {_markdown_text(workspace)}")
         lines.append("")
 
     return "\n".join(lines)
