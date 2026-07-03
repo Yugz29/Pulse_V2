@@ -9,6 +9,9 @@ from typing import Any
 from .trace_store import TraceStore
 
 
+IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu"}
+
+
 def _markdown_text(value: Any) -> str:
     text = str(value).replace("\r", " ").replace("\n", " ")
     for character in ("\\", "`", "*", "_", "[", "]"):
@@ -43,7 +46,7 @@ def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
     for activity in session["activities"]:
         if activity["type"] == "app_activated":
             app = activity.get("details", {}).get("app")
-            if app:
+            if app and app not in IGNORED_APP_NAMES_FOR_RENDERING:
                 counts[app] = counts.get(app, 0) + 1
     return counts
 
@@ -106,7 +109,8 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
                 file_paths.add(details["path"])
             elif activity["type"] == "app_activated" and details.get("app"):
                 app = details["app"]
-                app_counts[app] = app_counts.get(app, 0) + 1
+                if app not in IGNORED_APP_NAMES_FOR_RENDERING:
+                    app_counts[app] = app_counts.get(app, 0) + 1
 
     workspace = (
         max(workspace_counts, key=workspace_counts.get) if workspace_counts else None
@@ -202,6 +206,8 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             workspace = details.get("workspace")
 
             if activity["type"] == "app_activated":
+                if details.get("app") not in app_activation_counts:
+                    continue
                 if rendered_app_activations:
                     continue
                 rendered_app_activations = True
@@ -335,6 +341,8 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             event = details.get("event", details.get("change"))
             display_type = activity["type"]
             if activity["type"] == "app_activated":
+                if details.get("app") not in app_activation_counts:
+                    continue
                 if rendered_app_activations:
                     continue
                 rendered_app_activations = True

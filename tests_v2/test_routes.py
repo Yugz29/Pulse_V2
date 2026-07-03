@@ -31,7 +31,7 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     app = create_app(tmp_path / "trace.db")
     client = app.test_client()
 
-    apps = ["ChatGPT", "Code", "ChatGPT", "Terminal"]
+    apps = ["CleanMyMac Menu", "ChatGPT", "Code", "ChatGPT", "Terminal"]
     for app_name in apps:
         response = client.post(
             "/activities",
@@ -40,7 +40,7 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
         assert response.status_code == 201
 
     trace = client.get("/trace/today").get_json()
-    assert trace["activity_count"] == 4
+    assert trace["activity_count"] == 5
     assert [
         activity["details"]["app"]
         for activity in trace["sessions"][0]["activities"]
@@ -51,6 +51,8 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     html = client.get("/").get_data(as_text=True)
     assert expected in markdown
     assert expected in html
+    assert "CleanMyMac Menu" not in markdown
+    assert "CleanMyMac Menu" not in html
     assert "- Dernière activité utile : Non détectée" in markdown
     assert (
         "<dt>Dernière activité utile</dt><dd>Non détectée</dd>"
