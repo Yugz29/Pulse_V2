@@ -145,6 +145,40 @@ def test_does_not_coalesce_same_file_across_sessions(tmp_path):
     assert "×2" not in markdown
 
 
+def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 23, 17, 5, tzinfo=timezone.utc)
+    workspace = "/project"
+    changes = [
+        ("created", "/project/a.py", first_at),
+        ("modified", "/project/b.py", first_at + timedelta(seconds=20)),
+        ("created", "/project/a.py", first_at + timedelta(minutes=1)),
+    ]
+    for event, path, occurred_at in changes:
+        store.append(
+            Activity(
+                "file_changed",
+                occurred_at,
+                "filesystem",
+                f"{event.capitalize()} {path}",
+                {"path": path, "event": event, "workspace": workspace},
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+
+    assert trace["activity_count"] == 3
+    assert render_daily_trace_markdown(trace) == (
+        "# Trace du 2026-07-03\n"
+        "\n"
+        "## Session 1 — 23:17–23:18\n"
+        "\n"
+        "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
+        "  - Created `a.py` ×2\n"
+        "  - Modified `b.py`\n"
+    )
+
+
 def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     first_at = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc)

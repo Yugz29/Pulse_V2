@@ -48,6 +48,43 @@ def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+def _file_change_groups(
+    session: dict[str, Any],
+) -> dict[str, list[tuple[str, str, str | None, int]]]:
+    counts: dict[str, int] = {}
+    first_activities: dict[str, dict[str, Any]] = {}
+    for activity in session["activities"]:
+        if activity["type"] != "file_changed":
+            continue
+        details = activity.get("details", {})
+        path = details.get("path")
+        event = details.get("event", details.get("change"))
+        if path and event:
+            counts[path] = counts.get(path, 0) + 1
+            first_activities.setdefault(path, activity)
+
+    groups_by_minute: dict[datetime, list[tuple[str, str, str | None, int]]] = {}
+    for path, activity in first_activities.items():
+        details = activity["details"]
+        minute = datetime.fromisoformat(activity["occurred_at"]).replace(
+            second=0, microsecond=0
+        )
+        groups_by_minute.setdefault(minute, []).append(
+            (
+                path,
+                details.get("event", details.get("change")),
+                details.get("workspace"),
+                counts[path],
+            )
+        )
+
+    return {
+        path: group
+        for group in groups_by_minute.values()
+        for path, _event, _workspace, _count in group
+    }
+
+
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     lines = [f"# Trace du {trace['date']}", ""]
     if not trace["sessions"]:
@@ -59,12 +96,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         ended_at = _display_time(session["ended_at"])
         lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
 
-        file_change_counts: dict[str, int] = {}
-        for activity in session["activities"]:
-            if activity["type"] == "file_changed":
-                path = activity.get("details", {}).get("path")
-                if path:
-                    file_change_counts[path] = file_change_counts.get(path, 0) + 1
+        file_change_groups = _file_change_groups(session)
         rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
@@ -97,15 +129,29 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             elif activity["type"] == "file_changed" and event and path:
                 if path in rendered_file_paths:
                     continue
-                rendered_file_paths.add(path)
-                display_path = _display_file_path(path, workspace)
-                count = file_change_counts[path]
-                count_suffix = f" ×{count}" if count > 1 else ""
-                lines.append(
-                    f"- {occurred_at} · **{activity_type}** — "
-                    f"{str(event).capitalize()} "
-                    f"{_markdown_inline_code(display_path)}{count_suffix}"
-                )
+                group = file_change_groups[path]
+                rendered_file_paths.update(item[0] for item in group)
+                if len(group) > 1:
+                    lines.append(
+                        f"- {occurred_at} · **{activity_type}** — Fichiers modifiés :"
+                    )
+                    for item_path, item_event, item_workspace, count in group:
+                        suffix = f" ×{count}" if count > 1 else ""
+                        display_path = _display_file_path(item_path, item_workspace)
+                        lines.append(
+                            f"  - {str(item_event).capitalize()} "
+                            f"{_markdown_inline_code(display_path)}{suffix}"
+                        )
+                    workspace = None
+                else:
+                    count = group[0][3]
+                    count_suffix = f" ×{count}" if count > 1 else ""
+                    display_path = _display_file_path(path, workspace)
+                    lines.append(
+                        f"- {occurred_at} · **{activity_type}** — "
+                        f"{str(event).capitalize()} "
+                        f"{_markdown_inline_code(display_path)}{count_suffix}"
+                    )
             elif activity["type"] == "terminal_finished" and len(command_lines) > 1:
                 exit_code = details.get("exit_code")
                 status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
@@ -169,12 +215,7 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
                 '<ul class="timeline">',
             ]
         )
-        file_change_counts: dict[str, int] = {}
-        for activity in session["activities"]:
-            if activity["type"] == "file_changed":
-                path = activity.get("details", {}).get("path")
-                if path:
-                    file_change_counts[path] = file_change_counts.get(path, 0) + 1
+        file_change_groups = _file_change_groups(session)
         rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
@@ -198,13 +239,30 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             elif activity["type"] == "file_changed" and event and path:
                 if path in rendered_file_paths:
                     continue
-                rendered_file_paths.add(path)
-                count = file_change_counts[path]
-                suffix = f" ×{count}" if count > 1 else ""
-                content = (
-                    f"{escape(str(event).capitalize())} "
-                    f"<code>{escape(_display_file_path(path, workspace))}</code>{suffix}"
-                )
+                group = file_change_groups[path]
+                rendered_file_paths.update(item[0] for item in group)
+                if len(group) > 1:
+                    items = []
+                    for item_path, item_event, item_workspace, count in group:
+                        suffix = f" ×{count}" if count > 1 else ""
+                        items.append(
+                            f"<li>{escape(str(item_event).capitalize())} "
+                            f"<code>{escape(_display_file_path(item_path, item_workspace))}"
+                            f"</code>{suffix}</li>"
+                        )
+                    content = (
+                        "Fichiers modifiés :"
+                        f'<ul class="commands">{"".join(items)}</ul>'
+                    )
+                    workspace = None
+                else:
+                    count = group[0][3]
+                    suffix = f" ×{count}" if count > 1 else ""
+                    content = (
+                        f"{escape(str(event).capitalize())} "
+                        f"<code>{escape(_display_file_path(path, workspace))}</code>"
+                        f"{suffix}"
+                    )
             else:
                 command = details.get("command")
                 command_lines = (
