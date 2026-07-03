@@ -51,3 +51,25 @@ def test_clear_returns_204_and_is_not_stored(tmp_path):
             "SELECT COUNT(*) FROM activities"
         ).fetchone()[0]
     assert activity_count == 0
+
+
+def test_multiline_clear_and_trace_curl_returns_204_and_is_not_stored(tmp_path):
+    database_path = tmp_path / "trace.db"
+    app = create_app(database_path)
+
+    response = app.test_client().post(
+        "/activities",
+        json={
+            "type": "terminal_finished",
+            "command": "clear\ncurl http://127.0.0.1:5000/trace/today.md",
+            "exit_code": 0,
+            "cwd": "/project",
+        },
+    )
+
+    assert response.status_code == 204
+    with sqlite3.connect(database_path) as connection:
+        activity_count = connection.execute(
+            "SELECT COUNT(*) FROM activities"
+        ).fetchone()[0]
+    assert activity_count == 0

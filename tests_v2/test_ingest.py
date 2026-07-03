@@ -49,3 +49,16 @@ def test_ignores_noisy_terminal_commands(command):
                 "cwd": "/project",
             }
         )
+
+
+def test_removes_ignored_lines_from_multiline_command():
+    activity = normalize_activity(
+        {
+            "type": "terminal_finished",
+            "command": "clear\ngit status",
+            "exit_code": 0,
+            "cwd": "/project",
+        }
+    )
+
+    assert activity.details["command"] == "git status"

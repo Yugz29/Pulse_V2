@@ -56,11 +56,14 @@ def redact_command(command: str) -> str:
     return _ENV_SECRET.sub(r"\1=[REDACTED]", redacted)
 
 
-def should_ignore_terminal_command(value: Any) -> bool:
-    if not isinstance(value, str):
-        return False
-    command = " ".join(value.split())
-    return not command or command in _IGNORED_TERMINAL_COMMANDS
+def filter_terminal_command(command: str) -> str | None:
+    useful_lines = []
+    for line in command.splitlines():
+        stripped_line = line.strip()
+        normalized_line = " ".join(stripped_line.split())
+        if normalized_line and normalized_line not in _IGNORED_TERMINAL_COMMANDS:
+            useful_lines.append(stripped_line)
+    return "\n".join(useful_lines) or None
 
 
 def normalize_activity(payload: Any) -> Activity:
@@ -71,10 +74,14 @@ def normalize_activity(payload: Any) -> Activity:
     if activity_type not in SUPPORTED_ACTIVITY_TYPES:
         raise InvalidActivity(f"type must be one of: {', '.join(sorted(SUPPORTED_ACTIVITY_TYPES))}")
 
-    if activity_type == "terminal_finished" and should_ignore_terminal_command(
-        payload.get("command")
-    ):
-        raise IgnoredActivity("terminal command is intentionally ignored")
+    terminal_command = None
+    if activity_type == "terminal_finished":
+        raw_command = payload.get("command")
+        if not isinstance(raw_command, str):
+            raise InvalidActivity("command must be a non-empty string")
+        terminal_command = filter_terminal_command(raw_command)
+        if terminal_command is None:
+            raise IgnoredActivity("terminal command is intentionally ignored")
 
     occurred_at = _parse_occurred_at(payload.get("occurred_at"))
     details: dict[str, Any]
@@ -89,7 +96,8 @@ def normalize_activity(payload: Any) -> Activity:
         source = "filesystem"
         summary = f"{change.capitalize()} {normalized_path}"
     else:
-        command = redact_command(_required_string(payload, "command"))
+        assert terminal_command is not None
+        command = redact_command(terminal_command)
         exit_code = payload.get("exit_code")
         if isinstance(exit_code, bool) or not isinstance(exit_code, int):
             raise InvalidActivity("exit_code must be an integer")
