@@ -11,11 +11,15 @@ def test_normalizes_and_redacts_terminal_activity():
             "command": "deploy --token very-secret",
             "exit_code": 0,
             "cwd": "~/project",
+            "started_at": "2026-07-03T09:59:58+02:00",
+            "finished_at": "2026-07-03T10:00:00+02:00",
         }
     )
 
     assert activity.source == "terminal"
     assert activity.details["command"] == "deploy --token=[REDACTED]"
+    assert activity.details["started_at"] == "2026-07-03T09:59:58+02:00"
+    assert activity.details["finished_at"] == "2026-07-03T10:00:00+02:00"
     assert activity.summary == "Command succeeded: deploy --token=[REDACTED]"
 
 

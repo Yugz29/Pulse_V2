@@ -73,6 +73,9 @@ def normalize_activity(payload: Any) -> Activity:
             raise InvalidActivity("exit_code must be an integer")
         cwd = _required_string(payload, "cwd")
         details = {"command": command, "exit_code": exit_code, "cwd": str(Path(cwd).expanduser())}
+        for key in ("started_at", "finished_at"):
+            if key in payload:
+                details[key] = _parse_occurred_at(payload[key]).isoformat()
         source = "terminal"
         status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
         summary = f"Command {status}: {command}"

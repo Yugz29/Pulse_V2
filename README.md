@@ -1,4 +1,4 @@
-# Pulse
+# Pulse V2
 
 Pulse V0 observes local activity, stores an append-only trace, groups nearby
 events into sessions, and reconstructs a readable view of the current day.
@@ -9,7 +9,7 @@ activities through a local Flask API bound to `127.0.0.1`.
 ## Setup
 
 ```bash
-cd /Users/yugz/Projets/Pulse
+cd /Users/yugz/Projets/Pulse_V2
 python3 -m venv .venv
 .venv/bin/pip install Flask pytest
 ```
@@ -49,9 +49,27 @@ curl -X POST http://127.0.0.1:5000/activities \
 curl http://127.0.0.1:5000/trace/today
 ```
 
+## Terminal watcher
+
+Source the watcher manually from an interactive Zsh session:
+
+```bash
+source /Users/yugz/Projets/Pulse_V2/scripts/pulse_terminal_watcher.zsh
+```
+
+To load it in future Zsh sessions, add this line yourself to `~/.zshrc`:
+
+```zsh
+source /Users/yugz/Projets/Pulse_V2/scripts/pulse_terminal_watcher.zsh
+```
+
+The watcher records the command, working directory, start and finish times, and
+exit code. Delivery runs in the background and fails silently when the daemon
+is unavailable.
+
 ## V0 limits
 
-- Input is accepted only through the local HTTP API; no OS observer is included.
+- Input is accepted through the local HTTP API and the optional Zsh watcher.
 - Sessions use a fixed 30-minute inactivity gap.
 - Commands receive basic secret redaction, not shell-aware parsing.
 - SQLite is local and single-node; there is no retention or migration system yet.
