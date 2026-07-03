@@ -27,6 +27,22 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert 'href="/trace/today.md"' in html
 
 
+def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    client = app.test_client()
+
+    response = client.post(
+        "/activities",
+        json={"type": "app_activated", "app": "Visual Studio Code"},
+    )
+
+    assert response.status_code == 201
+    assert "Activated Visual Studio Code" in client.get(
+        "/trace/today.md"
+    ).get_data(as_text=True)
+    assert "Activated Visual Studio Code" in client.get("/").get_data(as_text=True)
+
+
 def test_today_markdown_route_returns_readable_markdown(tmp_path):
     app = create_app(tmp_path / "trace.db")
 

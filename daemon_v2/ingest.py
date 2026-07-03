@@ -112,7 +112,7 @@ def normalize_activity(payload: Any) -> Activity:
             details["workspace"] = str(Path(workspace).expanduser().absolute())
         source = "filesystem"
         summary = f"{event.capitalize()} {normalized_path}"
-    else:
+    elif activity_type == "terminal_finished":
         assert terminal_command is not None
         command = redact_command(terminal_command)
         exit_code = payload.get("exit_code")
@@ -126,6 +126,13 @@ def normalize_activity(payload: Any) -> Activity:
         source = "terminal"
         status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
         summary = f"Command {status}: {command}"
+    else:
+        app = _required_string(payload, "app")
+        details = {"app": app}
+        if "title" in payload:
+            details["title"] = _required_string(payload, "title")
+        source = "application"
+        summary = f"Activated {app}"
 
     return Activity(
         activity_type=activity_type,

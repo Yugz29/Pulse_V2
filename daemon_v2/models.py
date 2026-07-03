@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SUPPORTED_ACTIVITY_TYPES = {"file_changed", "terminal_finished"}
+SUPPORTED_ACTIVITY_TYPES = {"app_activated", "file_changed", "terminal_finished"}
 
 
 @dataclass(frozen=True)

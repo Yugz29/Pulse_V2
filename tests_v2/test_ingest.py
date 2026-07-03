@@ -28,6 +28,19 @@ def test_rejects_unknown_activity_type():
         normalize_activity({"type": "browser_opened"})
 
 
+def test_normalizes_app_activated_activity():
+    activity = normalize_activity(
+        {
+            "type": "app_activated",
+            "app": "Visual Studio Code",
+        }
+    )
+
+    assert activity.source == "application"
+    assert activity.details == {"app": "Visual Studio Code"}
+    assert activity.summary == "Activated Visual Studio Code"
+
+
 @pytest.mark.parametrize("event", ["modified", "created", "deleted"])
 def test_normalizes_file_changed_activity(event):
     activity = normalize_activity(

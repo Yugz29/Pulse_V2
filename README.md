@@ -22,14 +22,14 @@ python3 -m venv .venv
 
 ## Run
 
-Start the daemon and file watcher together from the workspace to observe:
+Start the daemon, file watcher, and macOS application watcher together:
 
 ```bash
 ./scripts/dev.sh
 ```
 
 The local page is available at `http://127.0.0.1:5000/`. Press `Ctrl-C` to stop
-both processes.
+all processes.
 
 To run only the daemon:
 
@@ -116,6 +116,18 @@ It reports created, modified, and deleted files to the local Pulse daemon.
 Technical paths such as `.git`, `.venv`, caches, `*.pyc`, `*.db`, and
 `.DS_Store` are ignored. The watcher keeps running silently if the daemon is
 unavailable. Stop it with `Ctrl-C`.
+
+## Application watcher
+
+On macOS, start the frontmost-application watcher manually with:
+
+```bash
+.venv/bin/python -m daemon_v2.app_watcher
+```
+
+It uses the local macOS `lsappinfo` command, records only application changes,
+and does not request window titles or Accessibility access. `scripts/dev.sh`
+starts this watcher together with the daemon and file watcher.
 
 ## V0 limits
 

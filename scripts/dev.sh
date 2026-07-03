@@ -13,14 +13,17 @@ if [[ ! -x "$python" ]]; then
 fi
 
 daemon_pid=""
-watcher_pid=""
+file_watcher_pid=""
+app_watcher_pid=""
 
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  [[ -n "$watcher_pid" ]] && kill "$watcher_pid" 2>/dev/null || true
+  [[ -n "$app_watcher_pid" ]] && kill "$app_watcher_pid" 2>/dev/null || true
+  [[ -n "$file_watcher_pid" ]] && kill "$file_watcher_pid" 2>/dev/null || true
   [[ -n "$daemon_pid" ]] && kill "$daemon_pid" 2>/dev/null || true
-  [[ -n "$watcher_pid" ]] && wait "$watcher_pid" 2>/dev/null || true
+  [[ -n "$app_watcher_pid" ]] && wait "$app_watcher_pid" 2>/dev/null || true
+  [[ -n "$file_watcher_pid" ]] && wait "$file_watcher_pid" 2>/dev/null || true
   [[ -n "$daemon_pid" ]] && wait "$daemon_pid" 2>/dev/null || true
   exit "$status"
 }
@@ -31,13 +34,17 @@ cd "$repo_root"
 "$python" -m daemon_v2.main &
 daemon_pid=$!
 "$python" -m daemon_v2.file_watcher "$workspace" &
-watcher_pid=$!
+file_watcher_pid=$!
+"$python" -m daemon_v2.app_watcher &
+app_watcher_pid=$!
 
 echo "Pulse V2: http://127.0.0.1:5000/"
 echo "Watching: $workspace"
 echo "Press Ctrl+C to stop."
 
-while kill -0 "$daemon_pid" 2>/dev/null && kill -0 "$watcher_pid" 2>/dev/null; do
+while kill -0 "$daemon_pid" 2>/dev/null \
+  && kill -0 "$file_watcher_pid" 2>/dev/null \
+  && kill -0 "$app_watcher_pid" 2>/dev/null; do
   sleep 1
 done
 
