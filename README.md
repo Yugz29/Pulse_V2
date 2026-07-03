@@ -26,8 +26,9 @@ python3 -m venv .venv
 .venv/bin/python -m daemon_v2.main
 ```
 
-The SQLite database is created at `data/pulse.sqlite3`. Override it with
-`PULSE_DB_PATH=/path/to/pulse.sqlite3`.
+The V2 SQLite database is created at `~/.pulse_v2/trace.db`. It is not migrated
+from or shared with Pulse V1 databases under `~/.pulse`. Override the V2 path
+with `PULSE_V2_DB_PATH=/path/to/trace.db`.
 
 ## Send an activity
 
