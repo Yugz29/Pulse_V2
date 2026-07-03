@@ -1,6 +1,6 @@
 import pytest
 
-from daemon_v2.ingest import InvalidActivity, normalize_activity
+from daemon_v2.ingest import IgnoredActivity, InvalidActivity, normalize_activity
 
 
 def test_normalizes_and_redacts_terminal_activity():
@@ -26,3 +26,26 @@ def test_normalizes_and_redacts_terminal_activity():
 def test_rejects_unknown_activity_type():
     with pytest.raises(InvalidActivity):
         normalize_activity({"type": "browser_opened"})
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "",
+        "   ",
+        "source ~/.zshrc",
+        "curl http://127.0.0.1:5000/trace/today",
+        "curl http://127.0.0.1:5000/trace/today.md",
+        "  curl   http://127.0.0.1:5000/trace/today.md  ",
+    ],
+)
+def test_ignores_noisy_terminal_commands(command):
+    with pytest.raises(IgnoredActivity):
+        normalize_activity(
+            {
+                "type": "terminal_finished",
+                "command": command,
+                "exit_code": 0,
+                "cwd": "/project",
+            }
+        )

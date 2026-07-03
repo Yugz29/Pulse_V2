@@ -14,10 +14,20 @@ _SENSITIVE_OPTION = re.compile(
 _ENV_SECRET = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:PASSWORD|TOKEN|SECRET|API_KEY)[A-Z0-9_]*)=(\S+)"
 )
+_IGNORED_TERMINAL_COMMANDS = {
+    "clear",
+    "curl http://127.0.0.1:5000/trace/today",
+    "curl http://127.0.0.1:5000/trace/today.md",
+    "source ~/.zshrc",
+}
 
 
 class InvalidActivity(ValueError):
     """Raised when an activity payload cannot be normalized."""
+
+
+class IgnoredActivity(ValueError):
+    """Raised when a valid but intentionally noisy activity should not be stored."""
 
 
 def _required_string(payload: dict[str, Any], key: str) -> str:
@@ -46,6 +56,13 @@ def redact_command(command: str) -> str:
     return _ENV_SECRET.sub(r"\1=[REDACTED]", redacted)
 
 
+def should_ignore_terminal_command(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    command = " ".join(value.split())
+    return not command or command in _IGNORED_TERMINAL_COMMANDS
+
+
 def normalize_activity(payload: Any) -> Activity:
     if not isinstance(payload, dict):
         raise InvalidActivity("request body must be a JSON object")
@@ -53,6 +70,11 @@ def normalize_activity(payload: Any) -> Activity:
     activity_type = _required_string(payload, "type")
     if activity_type not in SUPPORTED_ACTIVITY_TYPES:
         raise InvalidActivity(f"type must be one of: {', '.join(sorted(SUPPORTED_ACTIVITY_TYPES))}")
+
+    if activity_type == "terminal_finished" and should_ignore_terminal_command(
+        payload.get("command")
+    ):
+        raise IgnoredActivity("terminal command is intentionally ignored")
 
     occurred_at = _parse_occurred_at(payload.get("occurred_at"))
     details: dict[str, Any]

@@ -3,7 +3,7 @@
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from .daily_trace import build_daily_trace, render_daily_trace_markdown
-from .ingest import InvalidActivity, normalize_activity
+from .ingest import IgnoredActivity, InvalidActivity, normalize_activity
 
 
 api = Blueprint("pulse", __name__)
@@ -13,6 +13,8 @@ api = Blueprint("pulse", __name__)
 def post_activity():
     try:
         activity = normalize_activity(request.get_json(silent=True))
+    except IgnoredActivity:
+        return "", 204
     except InvalidActivity as exc:
         return jsonify({"error": str(exc)}), 400
 
