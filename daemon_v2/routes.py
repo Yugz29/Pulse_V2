@@ -1,8 +1,8 @@
 """HTTP routes for activity ingestion and daily trace retrieval."""
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
-from .daily_trace import build_daily_trace
+from .daily_trace import build_daily_trace, render_daily_trace_markdown
 from .ingest import InvalidActivity, normalize_activity
 
 
@@ -34,3 +34,9 @@ def post_activity():
 def get_today_trace():
     trace = build_daily_trace(current_app.config["TRACE_STORE"])
     return jsonify(trace)
+
+
+@api.get("/trace/today.md")
+def get_today_trace_markdown():
+    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+    return Response(render_daily_trace_markdown(trace), mimetype="text/markdown")

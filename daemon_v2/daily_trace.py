@@ -7,6 +7,41 @@ from typing import Any
 from .trace_store import TraceStore
 
 
+def _markdown_text(value: Any) -> str:
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    for character in ("\\", "`", "*", "_", "[", "]"):
+        text = text.replace(character, f"\\{character}")
+    return text
+
+
+def _display_time(value: str) -> str:
+    return datetime.fromisoformat(value).strftime("%H:%M")
+
+
+def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
+    lines = [f"# Trace du {trace['date']}", ""]
+    if not trace["sessions"]:
+        lines.extend(["_Aucune activité._", ""])
+        return "\n".join(lines)
+
+    for index, session in enumerate(trace["sessions"], start=1):
+        started_at = _display_time(session["started_at"])
+        ended_at = _display_time(session["ended_at"])
+        lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
+
+        for activity in session["activities"]:
+            occurred_at = _display_time(activity["occurred_at"])
+            activity_type = _markdown_text(activity["type"])
+            summary = _markdown_text(activity["summary"])
+            lines.append(f"- {occurred_at} · **{activity_type}** — {summary}")
+            cwd = activity.get("details", {}).get("cwd")
+            if cwd:
+                lines.append(f"  - CWD : {_markdown_text(cwd)}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def build_daily_trace(
     store: TraceStore,
     day: date | None = None,

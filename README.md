@@ -50,6 +50,12 @@ curl -X POST http://127.0.0.1:5000/activities \
 curl http://127.0.0.1:5000/trace/today
 ```
 
+For a human-readable Markdown trace grouped by session:
+
+```bash
+curl http://127.0.0.1:5000/trace/today.md
+```
+
 ## Terminal watcher
 
 Source the watcher manually from an interactive Zsh session:
