@@ -56,11 +56,25 @@ def redact_command(command: str) -> str:
     return _ENV_SECRET.sub(r"\1=[REDACTED]", redacted)
 
 
+def _is_internal_pulse_curl(command: str) -> bool:
+    return (
+        command.startswith("curl ")
+        and "http://127.0.0.1:5000/activities" in command
+    )
+
+
 def filter_terminal_command(command: str) -> str | None:
     useful_lines = []
+    ignoring_internal_curl = False
     for line in command.splitlines():
         stripped_line = line.strip()
         normalized_line = " ".join(stripped_line.split())
+        if ignoring_internal_curl:
+            continue
+        if _is_internal_pulse_curl(normalized_line):
+            # Remaining lines may be curl options or a multiline JSON body.
+            ignoring_internal_curl = True
+            continue
         if normalized_line and normalized_line not in _IGNORED_TERMINAL_COMMANDS:
             useful_lines.append(stripped_line)
     return "\n".join(useful_lines) or None

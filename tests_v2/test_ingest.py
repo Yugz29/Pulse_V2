@@ -82,3 +82,23 @@ def test_removes_ignored_lines_from_multiline_command():
     )
 
     assert activity.details["command"] == "git status"
+
+
+def test_keeps_useful_lines_before_multiline_internal_curl():
+    activity = normalize_activity(
+        {
+            "type": "terminal_finished",
+            "command": (
+                "git status\n"
+                "curl -X POST http://127.0.0.1:5000/activities \\\n"
+                "  -H 'Content-Type: application/json' \\\n"
+                "  -d '{\n"
+                '    \"type\": \"file_changed\"\n'
+                "  }'"
+            ),
+            "exit_code": 0,
+            "cwd": "/project",
+        }
+    )
+
+    assert activity.details["command"] == "git status"
