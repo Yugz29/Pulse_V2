@@ -94,7 +94,8 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
 
     for session in trace["sessions"]:
         for activity in session["activities"]:
-            last_activity = activity
+            if activity["type"] != "app_activated":
+                last_activity = activity
             details = activity.get("details", {})
             workspace = details.get("workspace")
             if workspace:
@@ -129,8 +130,6 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
                 f"{str(event).capitalize()} "
                 f"{_display_file_path(path, details.get('workspace'))}"
             )
-        elif last_type == "app_activated":
-            last_description = str(details.get("app", last_activity["summary"]))
         else:
             last_description = last_activity["summary"]
 
@@ -157,7 +156,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"{_markdown_text(summary['last_activity_type'])} — "
         f"{_markdown_text(summary['last_activity_description'])}"
         if summary["last_activity_type"]
-        else "Aucune"
+        else "Non détectée"
     )
     lines = [
         f"# Trace du {trace['date']}",
@@ -170,7 +169,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Commandes terminal : {summary['terminal_count']}",
         f"- Fichiers modifiés : {summary['distinct_file_count']}",
         f"- Apps principales : {', '.join(apps) if apps else 'Aucune'}",
-        f"- Dernière activité : {last_activity}",
+        f"- Dernière activité utile : {last_activity}",
         "",
     ]
     if not trace["sessions"]:
@@ -270,7 +269,7 @@ def render_daily_trace_html(trace: dict[str, Any]) -> str:
         f"{escape(str(summary['last_activity_type']))} — "
         f"{escape(str(summary['last_activity_description']))}"
         if summary["last_activity_type"]
-        else "Aucune"
+        else "Non détectée"
     )
     body = [
         "<!doctype html>",
@@ -307,7 +306,7 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
         f"<dt>Fichiers modifiés</dt><dd>{summary['distinct_file_count']}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
-        f"<dt>Dernière activité</dt><dd>{last_activity}</dd>",
+        f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
         "</dl></section>",
     ]
 

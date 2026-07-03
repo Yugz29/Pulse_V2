@@ -58,7 +58,7 @@ def test_renders_empty_daily_trace():
     assert "- Projet principal : Non détecté" in markdown
     assert "- Sessions : 0" in markdown
     assert "- Événements : 0" in markdown
-    assert "- Dernière activité : Aucune" in markdown
+    assert "- Dernière activité utile : Non détectée" in markdown
     assert markdown.endswith("_Aucune activité._\n")
 
 
@@ -280,6 +280,13 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
             "Command succeeded: git push",
             {"command": "git push", "exit_code": 0, "cwd": "/project/Pulse"},
         ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(minutes=6),
+            "application",
+            "Activated Terminal",
+            {"app": "Terminal"},
+        ),
     ]
     for activity in activities:
         store.append(activity)
@@ -292,11 +299,11 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "Projet principal : Pulse",
         "Workspace : /project/Pulse",
         "Sessions : 1",
-        "Événements : 6",
+        "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
-        "Apps principales : ChatGPT ×2",
-        "Dernière activité : terminal\\_finished — git push",
+        "Apps principales : ChatGPT ×2, Terminal",
+        "Dernière activité utile : terminal\\_finished — git push",
     ]
     for line in markdown_lines:
         assert line in markdown
@@ -304,11 +311,11 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "<dt>Projet principal</dt><dd>Pulse</dd>",
         "<dt>Workspace</dt><dd>/project/Pulse</dd>",
         "<dt>Sessions</dt><dd>1</dd>",
-        "<dt>Événements</dt><dd>6</dd>",
+        "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
-        "<dt>Apps principales</dt><dd>ChatGPT ×2</dd>",
-        "<dt>Dernière activité</dt><dd>terminal_finished — git push</dd>",
+        "<dt>Apps principales</dt><dd>ChatGPT ×2, Terminal</dd>",
+        "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
     ]
     for row in html_rows:
         assert row in html

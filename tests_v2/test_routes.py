@@ -47,8 +47,15 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     ] == apps
 
     expected = "Apps actives : ChatGPT ×2, Code, Terminal"
-    assert expected in client.get("/trace/today.md").get_data(as_text=True)
-    assert expected in client.get("/").get_data(as_text=True)
+    markdown = client.get("/trace/today.md").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
+    assert expected in markdown
+    assert expected in html
+    assert "- Dernière activité utile : Non détectée" in markdown
+    assert (
+        "<dt>Dernière activité utile</dt><dd>Non détectée</dd>"
+        in html
+    )
 
 
 def test_today_markdown_route_returns_readable_markdown(tmp_path):
