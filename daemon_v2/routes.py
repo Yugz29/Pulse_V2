@@ -2,11 +2,21 @@
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from .daily_trace import build_daily_trace, render_daily_trace_markdown
+from .daily_trace import (
+    build_daily_trace,
+    render_daily_trace_html,
+    render_daily_trace_markdown,
+)
 from .ingest import IgnoredActivity, InvalidActivity, normalize_activity
 
 
 api = Blueprint("pulse", __name__)
+
+
+@api.get("/")
+def get_home():
+    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+    return Response(render_daily_trace_html(trace), mimetype="text/html")
 
 
 @api.post("/activities")

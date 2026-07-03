@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,16 @@ def _markdown_inline_code(value: str) -> str:
         fence += "`"
     padding = " " if value.startswith("`") or value.endswith("`") else ""
     return f"{fence}{padding}{value}{padding}{fence}"
+
+
+def _display_file_path(path: str, workspace: str | None) -> str:
+    display_path = Path(path)
+    if workspace:
+        try:
+            display_path = display_path.relative_to(Path(workspace))
+        except ValueError:
+            pass
+    return str(display_path)
 
 
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
@@ -65,18 +76,13 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 if path in rendered_file_paths:
                     continue
                 rendered_file_paths.add(path)
-                display_path = Path(path)
-                if workspace:
-                    try:
-                        display_path = display_path.relative_to(Path(workspace))
-                    except ValueError:
-                        pass
+                display_path = _display_file_path(path, workspace)
                 count = file_change_counts[path]
                 count_suffix = f" ×{count}" if count > 1 else ""
                 lines.append(
                     f"- {occurred_at} · **{activity_type}** — "
                     f"{str(event).capitalize()} "
-                    f"{_markdown_inline_code(str(display_path))}{count_suffix}"
+                    f"{_markdown_inline_code(display_path)}{count_suffix}"
                 )
             elif activity["type"] == "terminal_finished" and len(command_lines) > 1:
                 exit_code = details.get("exit_code")
@@ -98,6 +104,114 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def render_daily_trace_html(trace: dict[str, Any]) -> str:
+    body = [
+        "<!doctype html>",
+        '<html lang="fr"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>Pulse — {escape(trace['date'])}</title>",
+        """<style>
+body{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;
+background:#f6f7f9;color:#20242a}header{margin-bottom:2rem}h1{margin-bottom:.25rem}
+.meta,.detail{color:#626b76}.session{background:white;border:1px solid #dfe3e8;
+border-radius:10px;padding:1rem 1.25rem;margin:1rem 0}.session h2{font-size:1.1rem;
+margin:0 0 1rem}.timeline{list-style:none;padding:0;margin:0}.event{display:grid;
+grid-template-columns:4rem 9rem 1fr;gap:.75rem;padding:.65rem 0;
+border-top:1px solid #edf0f2}.event:first-child{border-top:0}.type{font-family:monospace;
+font-size:.85rem;color:#46515d}.content code{background:#eef1f4;padding:.1rem .3rem;
+border-radius:4px}.commands{margin:.4rem 0;padding-left:1.25rem}.detail{font-size:.9rem;
+margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
+@media(max-width:650px){.event{grid-template-columns:3.5rem 1fr}.content{grid-column:2}}
+</style></head><body>""",
+        "<header>",
+        f"<h1>Trace du {escape(trace['date'])}</h1>",
+        (
+            f'<div class="meta">{trace["activity_count"]} activité(s) · '
+            f'{trace["session_count"]} session(s)</div>'
+        ),
+        "</header>",
+    ]
+
+    if not trace["sessions"]:
+        body.append("<p>Aucune activité aujourd’hui.</p>")
+
+    for index, session in enumerate(trace["sessions"], start=1):
+        started_at = _display_time(session["started_at"])
+        ended_at = _display_time(session["ended_at"])
+        body.extend(
+            [
+                '<section class="session">',
+                f"<h2>Session {index} · {started_at}–{ended_at}</h2>",
+                '<ul class="timeline">',
+            ]
+        )
+        file_change_counts: dict[str, int] = {}
+        for activity in session["activities"]:
+            if activity["type"] == "file_changed":
+                path = activity.get("details", {}).get("path")
+                if path:
+                    file_change_counts[path] = file_change_counts.get(path, 0) + 1
+        rendered_file_paths: set[str] = set()
+
+        for activity in session["activities"]:
+            details = activity.get("details", {})
+            path = details.get("path")
+            workspace = details.get("workspace")
+            event = details.get("event", details.get("change"))
+            if activity["type"] == "file_changed" and event and path:
+                if path in rendered_file_paths:
+                    continue
+                rendered_file_paths.add(path)
+                count = file_change_counts[path]
+                suffix = f" ×{count}" if count > 1 else ""
+                content = (
+                    f"{escape(str(event).capitalize())} "
+                    f"<code>{escape(_display_file_path(path, workspace))}</code>{suffix}"
+                )
+            else:
+                command = details.get("command")
+                command_lines = (
+                    [line.strip() for line in command.splitlines() if line.strip()]
+                    if isinstance(command, str)
+                    else []
+                )
+                if activity["type"] == "terminal_finished" and len(command_lines) > 1:
+                    exit_code = details.get("exit_code")
+                    status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
+                    items = "".join(
+                        f"<li><code>{escape(line)}</code></li>"
+                        for line in command_lines
+                    )
+                    content = f"Command {status}:<ul class=\"commands\">{items}</ul>"
+                else:
+                    content = escape(str(activity["summary"]))
+
+            detail_lines = []
+            if details.get("cwd"):
+                detail_lines.append(f"CWD : {escape(str(details['cwd']))}")
+            if workspace:
+                detail_lines.append(f"Workspace : {escape(str(workspace))}")
+            detail_html = "".join(
+                f'<div class="detail">{line}</div>' for line in detail_lines
+            )
+            body.append(
+                '<li class="event">'
+                f'<time>{_display_time(activity["occurred_at"])}</time>'
+                f'<span class="type">{escape(activity["type"])}</span>'
+                f'<div class="content">{content}{detail_html}</div></li>'
+            )
+        body.extend(["</ul>", "</section>"])
+
+    body.extend(
+        [
+            '<footer><a href="/trace/today">JSON</a> · '
+            '<a href="/trace/today.md">Markdown</a></footer>',
+            "</body></html>",
+        ]
+    )
+    return "\n".join(body)
 
 
 def build_daily_trace(

@@ -22,6 +22,17 @@ python3 -m venv .venv
 
 ## Run
 
+Start the daemon and file watcher together from the workspace to observe:
+
+```bash
+./scripts/dev.sh
+```
+
+The local page is available at `http://127.0.0.1:5000/`. Press `Ctrl-C` to stop
+both processes.
+
+To run only the daemon:
+
 ```bash
 .venv/bin/python -m daemon_v2.main
 ```
@@ -29,6 +40,12 @@ python3 -m venv .venv
 The V2 SQLite database is created at `~/.pulse_v2/trace.db`. It is not migrated
 from or shared with Pulse V1 databases under `~/.pulse`. Override the V2 path
 with `PULSE_V2_DB_PATH=/path/to/trace.db`.
+
+Open the local daily activity page at:
+
+```text
+http://127.0.0.1:5000/
+```
 
 ## Send an activity
 
@@ -107,5 +124,4 @@ unavailable. Stop it with `Ctrl-C`.
 - Commands receive basic secret redaction, not shell-aware parsing.
 - SQLite is local and single-node; there is no retention or migration system yet.
 - The daemon has no authentication because it only binds to `127.0.0.1`.
-# watcher test
 # watcher test

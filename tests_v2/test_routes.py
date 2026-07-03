@@ -3,6 +3,30 @@ import sqlite3
 from daemon_v2.main import create_app
 
 
+def test_home_route_renders_today_activity_as_html(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    client = app.test_client()
+    client.post(
+        "/activities",
+        json={
+            "type": "terminal_finished",
+            "command": "pytest <tests_v2>",
+            "exit_code": 0,
+            "cwd": "/project",
+        },
+    )
+
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/html"
+    assert "<h1>Trace du " in html
+    assert "Session 1" in html
+    assert "Command succeeded: pytest &lt;tests_v2&gt;" in html
+    assert 'href="/trace/today.md"' in html
+
+
 def test_today_markdown_route_returns_readable_markdown(tmp_path):
     app = create_app(tmp_path / "trace.db")
 
