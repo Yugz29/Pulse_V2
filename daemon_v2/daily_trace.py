@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from html import escape
 from pathlib import Path
 import shlex
+import subprocess
 from typing import Any
 
 from .trace_store import TraceStore
@@ -474,8 +475,56 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _git_local_summary(workspace: str) -> str | None:
+    if not Path(workspace).is_dir():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", workspace, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+
+    counts = {"modified": 0, "untracked": 0, "deleted": 0}
+    for line in result.stdout.splitlines():
+        if len(line) < 2 or line.startswith("!!"):
+            continue
+        status = line[:2]
+        if status == "??":
+            counts["untracked"] += 1
+        elif "D" in status:
+            counts["deleted"] += 1
+        else:
+            counts["modified"] += 1
+    if not any(counts.values()):
+        return "propre"
+
+    parts = []
+    labels = (
+        ("modified", "fichier modifié", "fichiers modifiés"),
+        ("untracked", "fichier non suivi", "fichiers non suivis"),
+        ("deleted", "fichier supprimé", "fichiers supprimés"),
+    )
+    for key, singular, plural in labels:
+        count = counts[key]
+        if count:
+            parts.append(f"{count} {singular if count == 1 else plural}")
+    return ", ".join(parts)
+
+
 def build_resume(trace: dict[str, Any]) -> list[str]:
     current = build_current_state(trace)
+    git_local = (
+        _git_local_summary(current["workspace"])
+        if current["workspace"] != "Non détecté"
+        else None
+    )
     last_test = None
     last_commit = None
     last_commit_at = None
@@ -566,6 +615,8 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     facts = []
     if state_parts:
         facts.append(f"État : {', '.join(state_parts)}")
+    if git_local:
+        facts.append(f"Git local : {git_local}")
     if current["project"] != "Non détecté":
         facts.append(f"Projet courant : {current['project']}")
     if current["last_activity_type"]:
@@ -592,7 +643,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             git_value = f"{last_commit} — push"
         facts.append(f"Dernier Git : {git_value}")
     if show_error:
-        if len(facts) >= 6:
+        if len(facts) >= 7:
             files_index = next(
                 (
                     index
@@ -604,7 +655,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             if files_index is not None:
                 facts.pop(files_index)
         facts.append(f"Erreur terminal récente : {last_error}")
-    return facts[:6]
+    return facts[:7]
 
 
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from daemon_v2.daily_trace import (
     build_current_state,
@@ -644,6 +645,59 @@ def test_resume_reports_changes_after_push_when_tests_are_current(tmp_path):
     assert "État : tests OK, dernier commit poussé" not in markdown
     assert expected in html
     assert "État : tests OK, dernier commit poussé" not in html
+
+
+def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatch):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    store.append(
+        Activity(
+            "terminal_finished",
+            datetime(2026, 7, 3, 18, 0, tzinfo=timezone.utc),
+            "terminal",
+            "Command succeeded: make test",
+            {"command": "make test", "exit_code": 0, "cwd": str(workspace)},
+        )
+    )
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    result = {"stdout": "", "returncode": 0}
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(**result)
+
+    monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
+
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    assert "- Git local : propre" in markdown
+    assert "Git local : propre" in html
+
+    result["stdout"] = " M changed.py\n?? new.py\nD  deleted.py\n"
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    expected = (
+        "Git local : 1 fichier modifié, 1 fichier non suivi, "
+        "1 fichier supprimé"
+    )
+    assert f"- {expected}" in markdown
+    assert expected in html
+
+    result["returncode"] = 128
+    assert "Git local :" not in render_daily_trace_markdown(trace)
+    assert "Git local :" not in render_daily_trace_html(trace)
+    assert calls
+    command, kwargs = calls[0]
+    assert command == [
+        "git",
+        "-C",
+        str(workspace),
+        "status",
+        "--porcelain",
+    ]
+    assert kwargs["timeout"] == 1
 
 
 def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
