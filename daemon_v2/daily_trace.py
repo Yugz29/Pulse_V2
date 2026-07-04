@@ -83,17 +83,21 @@ def _file_change_groups(
             counts[path] = counts.get(path, 0) + 1
             first_activities.setdefault(path, activity)
 
-    groups_by_minute: dict[datetime, list[tuple[str, str, str | None, int]]] = {}
+    groups_by_minute: dict[
+        tuple[datetime, str | None],
+        list[tuple[str, str, str | None, int]],
+    ] = {}
     for path, activity in first_activities.items():
         details = activity["details"]
         minute = datetime.fromisoformat(activity["occurred_at"]).replace(
             second=0, microsecond=0
         )
-        groups_by_minute.setdefault(minute, []).append(
+        workspace = details.get("workspace")
+        groups_by_minute.setdefault((minute, workspace), []).append(
             (
                 path,
                 details.get("event", details.get("change")),
-                details.get("workspace"),
+                workspace,
                 counts[path],
             )
         )
@@ -318,6 +322,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         for app, count in summary["apps"].items()
     ]
     projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
+    project_workspaces = set(summary["workspaces"])
     last_activity = (
         f"{_markdown_text(current['last_activity_type'])} — "
         f"{_markdown_text(current['last_activity_description'])}"
@@ -378,6 +383,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
+        rendered_project = None
 
         for activity in session["activities"]:
             occurred_at = _display_time(activity["occurred_at"])
@@ -401,6 +407,19 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             event = details.get("event", details.get("change"))
             path = details.get("path")
             workspace = details.get("workspace")
+            duplicate_file = (
+                activity["type"] == "file_changed"
+                and bool(event and path)
+                and path in rendered_file_paths
+            )
+            activity_workspace = _activity_workspace(activity)
+            if (
+                not duplicate_file
+                and activity_workspace in project_workspaces
+                and activity_workspace != rendered_project
+            ):
+                rendered_project = activity_workspace
+                lines.append(f"### {_markdown_text(Path(activity_workspace).name)}")
 
             if activity["type"] == "app_activated":
                 if details.get("app") not in app_activation_counts:
@@ -485,6 +504,7 @@ def render_daily_trace_html(
         f'<span title="{escape(path)}">{escape(Path(path).name)}</span>'
         for path in summary["workspaces"]
     ]
+    project_workspaces = set(summary["workspaces"])
     last_activity = (
         f"{escape(str(current['last_activity_type']))} — "
         f"{escape(str(current['last_activity_description']))}"
@@ -536,6 +556,9 @@ border-color:#285940;color:#8fd5aa}.label-git{background:#29243f;border-color:#4
 color:#b9a7ed}.label-pulse{background:#17333c;border-color:#285663;color:#86c9d8}
 .label-erreur{background:#3a2023;border-color:#6d363d;color:#e8a0a7}
 .commands{margin:.5rem 0;padding-left:1.35rem}.commands li{margin:.25rem 0}
+.project-separator{padding:1rem .25rem .45rem;color:#8fb4dd;font-weight:650;
+letter-spacing:.01em;border-top:1px solid var(--border)}.project-separator:first-child{
+border-top:0;padding-top:.25rem}
 .detail{font-size:.88rem;margin-top:.4rem}footer{margin-top:2.5rem;color:var(--muted);
 font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 @media(max-width:700px){body{padding:1.5rem 1rem 3rem}.current dl,.summary dl,
@@ -621,6 +644,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
+        rendered_project = None
 
         for activity in session["activities"]:
             details = activity.get("details", {})
@@ -633,6 +657,22 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
                 if activity["type"] == "terminal_finished"
                 else []
             )
+            duplicate_file = (
+                activity["type"] == "file_changed"
+                and bool(event and path)
+                and path in rendered_file_paths
+            )
+            activity_workspace = _activity_workspace(activity)
+            if (
+                not duplicate_file
+                and activity_workspace in project_workspaces
+                and activity_workspace != rendered_project
+            ):
+                rendered_project = activity_workspace
+                body.append(
+                    '<li class="project-separator">'
+                    f"{escape(Path(activity_workspace).name)}</li>"
+                )
             if activity["type"] == "app_activated":
                 if details.get("app") not in app_activation_counts:
                     continue

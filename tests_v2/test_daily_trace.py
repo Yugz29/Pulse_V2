@@ -122,13 +122,14 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
 
     assert trace["sessions"][0]["activities"][0]["details"]["path"] == absolute_path
     assert (
-        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-5:]) + "\n").lstrip()
-        == (
-        "## Session 1 — 21:20–21:20\n"
-        "\n"
-        "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
-        "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
+        (
+            "## Session 1 — 21:20–21:20\n"
+            "\n"
+            "### Pulse\\_V2\n"
+            "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
+            "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
         )
+        in render_daily_trace_markdown(trace)
     )
 
 
@@ -183,14 +184,15 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
 
     assert trace["activity_count"] == 3
     assert (
-        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-6:]) + "\n").lstrip()
-        == (
-        "## Session 1 — 23:17–23:18\n"
-        "\n"
-        "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
-        "  - Created `a.py` ×2\n"
-        "  - Modified `b.py`\n"
+        (
+            "## Session 1 — 23:17–23:18\n"
+            "\n"
+            "### project\n"
+            "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
+            "  - Created `a.py` ×2\n"
+            "  - Modified `b.py`\n"
         )
+        in render_daily_trace_markdown(trace)
     )
 
 
@@ -551,3 +553,66 @@ def test_current_workspace_uses_latest_useful_event_and_today_lists_all_projects
     assert f'title="{workspaces[2]}">Pulse_Sandbox</span>' in html
     assert f'title="{workspaces[1]}">TEST</span>' not in html
     assert markdown.count("## Session ") == 2
+
+
+def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc)
+    pulse_v2 = "/Users/yugz/Projets/Pulse_V2"
+    weak_parent = "/Users/yugz/Projets/TEST"
+    sandbox = "/Users/yugz/Projets/TEST/Pulse_Sandbox"
+    activities = [
+        Activity(
+            "terminal_finished",
+            first_at,
+            "terminal",
+            "Command succeeded: git status",
+            {"command": "git status", "exit_code": 0, "cwd": pulse_v2},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=5),
+            "terminal",
+            "Command succeeded: mkdir Pulse_Sandbox",
+            {
+                "command": "mkdir Pulse_Sandbox",
+                "exit_code": 0,
+                "cwd": weak_parent,
+            },
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=10),
+            "filesystem",
+            f"Created {sandbox}/src/calc.py",
+            {
+                "path": f"{sandbox}/src/calc.py",
+                "event": "created",
+                "workspace": sandbox,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=15),
+            "terminal",
+            "Command succeeded: make test",
+            {"command": "make test", "exit_code": 0, "cwd": pulse_v2},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    timeline = markdown.split("## Session 1", 1)[1]
+
+    assert trace["session_count"] == 1
+    assert timeline.count("### Pulse\\_V2") == 2
+    assert timeline.count("### Pulse\\_Sandbox") == 1
+    assert "### TEST" not in timeline
+    assert f"  - CWD : {weak_parent}" in timeline
+    assert html.count('class="project-separator">Pulse_V2</li>') == 2
+    assert html.count('class="project-separator">Pulse_Sandbox</li>') == 1
+    assert 'class="project-separator">TEST</li>' not in html
+    assert f"CWD : {weak_parent}" in html
