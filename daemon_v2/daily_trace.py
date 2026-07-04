@@ -115,9 +115,15 @@ def _terminal_labels(activity: dict[str, Any]) -> list[str]:
     )
     labels: set[str] = set()
     for line in command_lines:
-        if any(
+        parts = line.split()
+        python_pytest = (
+            len(parts) >= 3
+            and Path(parts[0]).name in {"python", "python3"}
+            and parts[1:3] == ["-m", "pytest"]
+        )
+        if python_pytest or any(
             line == prefix or line.startswith(f"{prefix} ")
-            for prefix in ("pytest", "python -m pytest", "npm test", "swift test")
+            for prefix in ("pytest", "npm test", "swift test")
         ):
             labels.add("test")
         if any(

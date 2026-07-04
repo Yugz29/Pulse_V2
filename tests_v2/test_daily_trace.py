@@ -327,7 +327,9 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     first_at = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
     commands = [
-        ("pytest tests_v2", 0),
+        (".venv/bin/python -m pytest tests_v2", 0),
+        ("python -m pytest tests_v2", 0),
+        ("python3 -m pytest tests_v2", 0),
         ("git status", 0),
         ("python -m daemon_v2.main", 1),
         ("echo useful", 0),
@@ -349,14 +351,21 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     html = render_daily_trace_html(trace)
 
     for line in (
-        "Commandes terminal : 4",
-        "Tests : 1",
+        "Commandes terminal : 6",
+        "Tests : 3",
         "Git : 1",
         "Erreurs : 1",
         "Commandes Pulse : 1",
     ):
         assert line in markdown
-    assert "**terminal\\_finished** `test` — Command succeeded: `pytest tests_v2`" in markdown
+    assert (
+        "**terminal\\_finished** `test` — Command succeeded: "
+        "`.venv/bin/python -m pytest tests_v2`"
+    ) in markdown
+    assert (
+        "**terminal\\_finished** `test` — Command succeeded: "
+        "`python3 -m pytest tests_v2`"
+    ) in markdown
     assert "**terminal\\_finished** `git` — Command succeeded: `git status`" in markdown
     assert (
         "**terminal\\_finished** `pulse` `erreur` — "
@@ -365,7 +374,7 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
 
     for label in ("test", "git", "pulse", "erreur"):
         assert f'<span class="label">{label}</span>' in html
-    assert "<dt>Tests</dt><dd>1</dd>" in html
+    assert "<dt>Tests</dt><dd>3</dd>" in html
     assert "<dt>Git</dt><dd>1</dd>" in html
     assert "<dt>Erreurs</dt><dd>1</dd>" in html
     assert "<dt>Commandes Pulse</dt><dd>1</dd>" in html
