@@ -556,6 +556,19 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
             {"command": "make test", "exit_code": 2, "cwd": "/project"},
         )
     )
+    store.append(
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=4),
+            "filesystem",
+            "Modified /project/a.py",
+            {
+                "path": "/project/a.py",
+                "event": "modified",
+                "workspace": "/project",
+            },
+        )
+    )
     command = (
         ".venv/bin/python -m pytest tests_v2\n"
         'git commit -m "validated changes"\n'
@@ -585,6 +598,52 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
     assert "Dernier test : .venv/bin/python -m pytest tests_v2 — OK" in html
     assert "État : tests OK, dernier commit poussé" in html
     assert "Erreur terminal récente" not in html
+
+
+def test_resume_reports_changes_after_push_when_tests_are_current(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 17, 40, tzinfo=timezone.utc)
+    workspace = "/project/Pulse_V2"
+    git_command = 'git commit -m "checkpoint"\ngit push'
+    activities = [
+        Activity(
+            "terminal_finished",
+            first_at,
+            "terminal",
+            f"Command succeeded: {git_command}",
+            {"command": git_command, "exit_code": 0, "cwd": workspace},
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=3),
+            "filesystem",
+            f"Modified {workspace}/daemon_v2/daily_trace.py",
+            {
+                "path": f"{workspace}/daemon_v2/daily_trace.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=7),
+            "terminal",
+            "Command succeeded: make test",
+            {"command": "make test", "exit_code": 0, "cwd": workspace},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    expected = "État : tests OK, modifications non push"
+    assert f"- {expected}" in markdown
+    assert "État : tests OK, dernier commit poussé" not in markdown
+    assert expected in html
+    assert "État : tests OK, dernier commit poussé" not in html
 
 
 def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):

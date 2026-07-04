@@ -546,6 +546,9 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
         and last_successful_test_at
         and last_file_at > last_successful_test_at
     )
+    files_after_push = bool(
+        last_file_at and last_push_at and last_file_at > last_push_at
+    )
     if last_test_succeeded is False:
         state_parts.append("tests échoués")
     elif show_error:
@@ -555,7 +558,9 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     else:
         if last_test_succeeded:
             state_parts.append("tests OK")
-        if commit_pushed:
+        if files_after_push:
+            state_parts.append("modifications non push")
+        elif commit_pushed:
             state_parts.append("dernier commit poussé")
 
     facts = []
