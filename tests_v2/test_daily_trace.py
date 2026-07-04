@@ -516,8 +516,12 @@ def test_renders_deterministic_resume_before_today(tmp_path):
     resume_html = html.split('<section class="resume"', 1)[1].split(
         "</section>", 1
     )[0]
-    assert resume_html.count("<li>") == 6
-    assert "État : activité en cours, test non relancé" in resume_html
+    assert resume_html.count("<dt>") == 6
+    assert (
+        "<dt>État</dt><dd>activité en cours, test non relancé</dd>"
+        in resume_html
+    )
+    assert "<dt>Projet courant</dt><dd>Pulse_V2</dd>" in resume_html
     assert html.index('id="maintenant"') < html.index('id="reprise"')
     assert html.index('id="reprise"') < html.index('id="aujourdhui"')
 
@@ -542,7 +546,10 @@ def test_resume_reports_latest_terminal_error(tmp_path):
     assert "- Dernier test : pytest tests\\_v2 — Échec (1)" in markdown
     assert "- État : tests échoués" in markdown
     assert "- Erreur terminal récente : pytest tests\\_v2 — code 1" in markdown
-    assert "Erreur terminal récente : pytest tests_v2 — code 1" in html
+    assert (
+        "<dt>Erreur terminal récente</dt><dd>pytest tests_v2 — code 1</dd>"
+        in html
+    )
 
 
 def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
@@ -596,8 +603,14 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
     assert "- État : tests OK, dernier commit poussé" in markdown
     assert 'Dernier test : git commit -m "validated changes"' not in markdown
     assert "Erreur terminal récente" not in markdown
-    assert "Dernier test : .venv/bin/python -m pytest tests_v2 — OK" in html
-    assert "État : tests OK, dernier commit poussé" in html
+    assert (
+        "<dt>Dernier test</dt>"
+        "<dd>.venv/bin/python -m pytest tests_v2 — OK</dd>"
+    ) in html
+    assert (
+        "<dt>État</dt><dd>tests OK, dernier commit poussé</dd>"
+        in html
+    )
     assert "Erreur terminal récente" not in html
 
 
@@ -643,8 +656,8 @@ def test_resume_reports_changes_after_push_when_tests_are_current(tmp_path):
     expected = "État : tests OK, modifications non push"
     assert f"- {expected}" in markdown
     assert "État : tests OK, dernier commit poussé" not in markdown
-    assert expected in html
-    assert "État : tests OK, dernier commit poussé" not in html
+    assert "<dt>État</dt><dd>tests OK, modifications non push</dd>" in html
+    assert "<dt>État</dt><dd>tests OK, dernier commit poussé</dd>" not in html
 
 
 def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatch):
@@ -673,7 +686,7 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     assert "- Git local : propre" in markdown
-    assert "Git local : propre" in html
+    assert "<dt>Git local</dt><dd>propre</dd>" in html
 
     result["stdout"] = " M changed.py\n?? new.py\nD  deleted.py\n"
     markdown = render_daily_trace_markdown(trace)
@@ -683,11 +696,14 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "1 fichier supprimé"
     )
     assert f"- {expected}" in markdown
-    assert expected in html
+    assert (
+        "<dt>Git local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
+        "1 fichier supprimé</dd>"
+    ) in html
 
     result["returncode"] = 128
     assert "Git local :" not in render_daily_trace_markdown(trace)
-    assert "Git local :" not in render_daily_trace_html(trace)
+    assert "<dt>Git local</dt>" not in render_daily_trace_html(trace)
     assert calls
     command, kwargs = calls[0]
     assert command == [

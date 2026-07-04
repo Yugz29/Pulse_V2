@@ -1004,7 +1004,9 @@ border-radius:12px;padding:1.25rem 1.5rem;margin:1.25rem 0;box-shadow:0 8px 24px
 .system{border-top:3px solid #778493;background:var(--panel-soft)}
 .session{margin-top:1.5rem}.session h2{font-size:1.1rem;margin:0 0 1rem;color:#cbd5e1}
 .current h2,.resume h2,.summary h2,.system h2{font-size:1.2rem;margin:0 0 1rem}
-.resume ul{margin:0;padding-left:1.2rem}.resume li{margin:.25rem 0}
+.resume dl{display:grid;grid-template-columns:10rem minmax(0,1fr);gap:.45rem 1rem;margin:0}
+.resume dt{font-weight:650;color:#b8a8d3}.resume dd{margin:0;min-width:0;
+overflow-wrap:anywhere;color:#cbd3dd}
 .current dl,.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;
 gap:.5rem 1.25rem;margin:0}.current dt,.summary dt,.system dt{font-weight:600;
 color:#aeb9c6}.current dd,.summary dd,.system dd{margin:0;min-width:0;
@@ -1036,9 +1038,10 @@ font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration
 @media(max-width:850px){body{padding:1.5rem 1rem 3rem}.page-shell{display:block}
 .sidebar{position:static;margin-bottom:1.25rem}.sidebar a{display:inline-block}
 .nav-session{margin-top:0}.nav-project{padding-left:.4rem!important}
-.current dl,.summary dl,
+.current dl,.resume dl,.summary dl,
 .system dl{grid-template-columns:1fr;gap:.1rem}.current dd,.summary dd,.system dd{
-margin-bottom:.55rem}.event{grid-template-columns:3.25rem 1fr;gap:.65rem}.content{
+margin-bottom:.55rem}.resume dd{margin-bottom:.45rem}.event{
+grid-template-columns:3.25rem 1fr;gap:.65rem}.content{
 grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
 </style></head><body>""",
         '<div class="page-shell">',
@@ -1065,10 +1068,15 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         "</dl></section>",
     ]
     if resume:
-        resume_items = "".join(f"<li>{escape(fact)}</li>" for fact in resume)
+        resume_rows = []
+        for fact in resume:
+            label, value = fact.split(" : ", 1)
+            resume_rows.extend(
+                [f"<dt>{escape(label)}</dt>", f"<dd>{escape(value)}</dd>"]
+            )
         body.append(
             '<section class="resume" id="reprise"><h2>Reprise</h2>'
-            f"<ul>{resume_items}</ul></section>"
+            f"<dl>{''.join(resume_rows)}</dl></section>"
         )
     body.extend(
         [
