@@ -174,7 +174,7 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
     changes = [
         ("created", "/project/a.py", first_at),
         ("modified", "/project/b.py", first_at + timedelta(seconds=20)),
-        ("created", "/project/a.py", first_at + timedelta(minutes=1)),
+        ("created", "/project/a.py", first_at + timedelta(seconds=40)),
     ]
     for event, path, occurred_at in changes:
         store.append(
@@ -191,7 +191,8 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
 
     assert trace["activity_count"] == 3
     markdown = render_daily_trace_markdown(trace)
-    assert "## Session 1 — 23:17–23:18" in markdown
+    html = render_daily_trace_html(trace)
+    assert "## Session 1 — 23:17–23:17" in markdown
     assert "### Résumé de session" in markdown
     assert (
         "### project\n"
@@ -199,6 +200,61 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
         "  - Created `a.py` ×2\n"
         "  - Modified `b.py`"
     ) in markdown
+    assert (
+        'Fichiers modifiés :<ul class="commands">'
+        "<li>Created <code>a.py</code> ×2</li>"
+        "<li>Modified <code>b.py</code></li></ul>"
+    ) in html
+
+
+def test_keeps_later_file_change_visible_before_terminal_activity(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    workspace = "/Users/yugz/Projets/Pulse_V2"
+    path = f"{workspace}/daemon_v2/daily_trace.py"
+    first_at = datetime(2026, 7, 3, 16, 10, tzinfo=timezone.utc)
+    details = {"path": path, "event": "modified", "workspace": workspace}
+    store.append(
+        Activity("file_changed", first_at, "filesystem", f"Modified {path}", details)
+    )
+    store.append(
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=6),
+            "filesystem",
+            f"Modified {path}",
+            details,
+        )
+    )
+    store.append(
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=7),
+            "terminal",
+            "Command succeeded: touch daemon_v2/daily_trace.py",
+            {
+                "command": "touch daemon_v2/daily_trace.py",
+                "exit_code": 0,
+                "cwd": workspace,
+            },
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert (
+        "- 16:16 · **file\\_changed** — "
+        "Modified `daemon_v2/daily_trace.py`"
+    ) in markdown
+    assert markdown.index("- 16:16 · **file\\_changed**") < markdown.index(
+        "- 16:17 · **terminal\\_finished**"
+    )
+    assert (
+        "<time>16:16</time><span class=\"type\">file_changed</span>"
+        '<div class="content">Modified <code>daemon_v2/daily_trace.py</code>'
+    ) in html
+    assert html.index("<time>16:16</time>") < html.index("<time>16:17</time>")
 
 
 def test_does_not_coalesce_app_activations_across_sessions(tmp_path):

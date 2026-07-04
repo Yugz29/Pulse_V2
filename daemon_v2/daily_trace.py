@@ -217,9 +217,11 @@ def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _file_change_groups(
     session: dict[str, Any],
-) -> dict[str, list[tuple[str, str, str | None, int]]]:
-    counts: dict[str, int] = {}
-    first_activities: dict[str, dict[str, Any]] = {}
+) -> dict[int, list[tuple[str, str, str | None, int]]]:
+    activities_by_minute: dict[
+        tuple[datetime, str | None],
+        list[dict[str, Any]],
+    ] = {}
     for activity in session["activities"]:
         if activity["type"] != "file_changed":
             continue
@@ -227,33 +229,35 @@ def _file_change_groups(
         path = details.get("path")
         event = details.get("event", details.get("change"))
         if path and event:
+            minute = datetime.fromisoformat(activity["occurred_at"]).replace(
+                second=0, microsecond=0
+            )
+            activities_by_minute.setdefault(
+                (minute, details.get("workspace")), []
+            ).append(activity)
+
+    groups = {}
+    for activities in activities_by_minute.values():
+        counts: OrderedDict[str, int] = OrderedDict()
+        first_activities = {}
+        for activity in activities:
+            path = activity["details"]["path"]
             counts[path] = counts.get(path, 0) + 1
             first_activities.setdefault(path, activity)
-
-    groups_by_minute: dict[
-        tuple[datetime, str | None],
-        list[tuple[str, str, str | None, int]],
-    ] = {}
-    for path, activity in first_activities.items():
-        details = activity["details"]
-        minute = datetime.fromisoformat(activity["occurred_at"]).replace(
-            second=0, microsecond=0
-        )
-        workspace = details.get("workspace")
-        groups_by_minute.setdefault((minute, workspace), []).append(
+        group = [
             (
                 path,
-                details.get("event", details.get("change")),
-                workspace,
-                counts[path],
+                first_activities[path]["details"].get(
+                    "event", first_activities[path]["details"].get("change")
+                ),
+                first_activities[path]["details"].get("workspace"),
+                count,
             )
-        )
-
-    return {
-        path: group
-        for group in groups_by_minute.values()
-        for path, _event, _workspace, _count in group
-    }
+            for path, count in counts.items()
+        ]
+        first_activity = next(iter(first_activities.values()))
+        groups[id(first_activity)] = group
+    return groups
 
 
 def _terminal_labels(activity: dict[str, Any]) -> list[str]:
@@ -541,7 +545,6 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 )
 
         file_change_groups = _file_change_groups(session)
-        rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
         rendered_project = None
@@ -571,7 +574,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             duplicate_file = (
                 activity["type"] == "file_changed"
                 and bool(event and path)
-                and path in rendered_file_paths
+                and id(activity) not in file_change_groups
             )
             activity_workspace = _activity_workspace(activity)
             if (
@@ -595,10 +598,9 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 lines.append(f"- Apps actives : {', '.join(apps)}")
                 continue
             elif activity["type"] == "file_changed" and event and path:
-                if path in rendered_file_paths:
+                if id(activity) not in file_change_groups:
                     continue
-                group = file_change_groups[path]
-                rendered_file_paths.update(item[0] for item in group)
+                group = file_change_groups[id(activity)]
                 if len(group) > 1:
                     lines.append(
                         f"- {occurred_at} · **{activity_type}** — Fichiers modifiés :"
@@ -841,7 +843,6 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
             )
         body.append('<ul class="timeline">')
         file_change_groups = _file_change_groups(session)
-        rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
         rendered_project = None
@@ -860,7 +861,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
             duplicate_file = (
                 activity["type"] == "file_changed"
                 and bool(event and path)
-                and path in rendered_file_paths
+                and id(activity) not in file_change_groups
             )
             activity_workspace = _activity_workspace(activity)
             if (
@@ -886,10 +887,9 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
                 content = f"Apps actives : {', '.join(apps)}"
                 display_type = "applications"
             elif activity["type"] == "file_changed" and event and path:
-                if path in rendered_file_paths:
+                if id(activity) not in file_change_groups:
                     continue
-                group = file_change_groups[path]
-                rendered_file_paths.update(item[0] for item in group)
+                group = file_change_groups[id(activity)]
                 if len(group) > 1:
                     items = []
                     for item_path, item_event, item_workspace, count in group:
