@@ -124,9 +124,9 @@ def get_day(date_value):
     return Response(
         render_daily_trace_html(
             trace,
-            system_status=_build_status(trace),
             trace_json_url=f"/trace/{date_value}",
             trace_markdown_url=f"/trace/{date_value}.md",
+            archive_mode=True,
         ),
         mimetype="text/html",
     )

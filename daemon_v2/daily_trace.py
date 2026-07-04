@@ -925,10 +925,11 @@ def render_daily_trace_html(
     system_status: dict[str, Any] | None = None,
     trace_json_url: str = "/trace/today",
     trace_markdown_url: str = "/trace/today.md",
+    archive_mode: bool = False,
 ) -> str:
     summary = build_daily_summary(trace)
-    current = build_current_state(trace)
-    resume = build_resume(trace)
+    current = build_current_state(trace) if not archive_mode else None
+    resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
@@ -939,7 +940,7 @@ def render_daily_trace_html(
     last_activity = (
         f"{escape(str(current['last_activity_type']))} — "
         f"{escape(str(current['last_activity_description']))}"
-        if current["last_activity_type"]
+        if current and current["last_activity_type"]
         else "Non détectée"
     )
     recent_files = (
@@ -950,16 +951,24 @@ def render_daily_trace_html(
             for item in current["recent_files"]
         )
         + "</ul>"
-        if current["recent_files"]
+        if current and current["recent_files"]
         else "Aucun"
     )
-    navigation = [
-        '<a class="nav-main" href="#maintenant">Maintenant</a>',
-    ]
-    if resume:
-        navigation.append('<a class="nav-main" href="#reprise">Reprise</a>')
-    navigation.append('<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>')
-    if system_status:
+    navigation = []
+    if archive_mode:
+        navigation.append(
+            '<a class="nav-main" href="#resume-jour">Résumé du jour</a>'
+        )
+    else:
+        navigation.append(
+            '<a class="nav-main" href="#maintenant">Maintenant</a>'
+        )
+        if resume:
+            navigation.append('<a class="nav-main" href="#reprise">Reprise</a>')
+        navigation.append(
+            '<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>'
+        )
+    if system_status and not archive_mode:
         navigation.append(
             '<a class="nav-main" href="#etat-systeme">État système</a>'
         )
@@ -975,12 +984,21 @@ def render_daily_trace_html(
                 f'href="#session-{index}-projet-{project_index}">'
                 f"{escape(Path(workspace).name)}</a>"
             )
-    navigation.append('<a class="nav-main nav-live nav-bottom" href="#timeline-live">Direct</a>')
+    end_anchor = "timeline-end" if archive_mode else "timeline-live"
+    end_label = "Fin du jour" if archive_mode else "Direct"
+    navigation.append(
+        f'<a class="nav-main nav-live nav-bottom" '
+        f'href="#{end_anchor}">{end_label}</a>'
+    )
     body = [
         "<!doctype html>",
         '<html lang="fr"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>Pulse — {escape(trace['date'])}</title>",
+        (
+            f"<title>Pulse — Journal du {escape(trace['date'])}</title>"
+            if archive_mode
+            else f"<title>Pulse — {escape(trace['date'])}</title>"
+        ),
         """<style>
 :root{color-scheme:dark;--bg:#11151a;--panel:#191f26;--panel-soft:#161c22;
 --border:#2a333d;--text:#d7dee7;--muted:#8f9aaa;--link:#83a9d8}
@@ -1053,22 +1071,31 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         "</nav>",
         "<main>",
         "<header>",
-        f"<h1>Trace du {escape(trace['date'])}</h1>",
+        (
+            f"<h1>Journal du {escape(trace['date'])}</h1>"
+            if archive_mode
+            else f"<h1>Trace du {escape(trace['date'])}</h1>"
+        ),
         (
             f'<div class="meta">{trace["activity_count"]} activité(s) · '
             f'{trace["session_count"]} session(s)</div>'
         ),
         "</header>",
-        '<section class="current" id="maintenant"><h2>Maintenant</h2><dl>',
-        f"<dt>Projet probable</dt><dd>{escape(str(current['project']))}</dd>",
-        f"<dt>Workspace</dt><dd>{escape(str(current['workspace']))}</dd>",
-        f"<dt>App active</dt><dd>{escape(str(current['app']))}</dd>",
-        f"<dt>Dernière commande</dt><dd>{escape(str(current['command']))}</dd>",
-        f"<dt>Fichiers récents</dt><dd>{recent_files}</dd>",
-        f"<dt>Session active depuis</dt><dd>{current['session_started_at']}</dd>",
-        f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
-        "</dl></section>",
     ]
+    if not archive_mode:
+        body.extend(
+            [
+                '<section class="current" id="maintenant"><h2>Maintenant</h2><dl>',
+                f"<dt>Projet probable</dt><dd>{escape(str(current['project']))}</dd>",
+                f"<dt>Workspace</dt><dd>{escape(str(current['workspace']))}</dd>",
+                f"<dt>App active</dt><dd>{escape(str(current['app']))}</dd>",
+                f"<dt>Dernière commande</dt><dd>{escape(str(current['command']))}</dd>",
+                f"<dt>Fichiers récents</dt><dd>{recent_files}</dd>",
+                f"<dt>Session active depuis</dt><dd>{current['session_started_at']}</dd>",
+                f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
+                "</dl></section>",
+            ]
+        )
     if resume:
         resume_rows = []
         for fact in resume:
@@ -1082,7 +1109,12 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         )
     body.extend(
         [
-        '<section class="summary" id="aujourdhui"><h2>Aujourd’hui</h2><dl>',
+        (
+            '<section class="summary" id="resume-jour">'
+            "<h2>Résumé du jour</h2><dl>"
+            if archive_mode
+            else '<section class="summary" id="aujourdhui"><h2>Aujourd’hui</h2><dl>'
+        ),
         f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
@@ -1097,7 +1129,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         ]
     )
 
-    if system_status:
+    if system_status and not archive_mode:
         database_exists = "oui" if system_status["database_exists"] else "non"
         workspace = system_status["primary_workspace"] or "Non détecté"
         body.extend(
@@ -1283,7 +1315,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
 
     body.extend(
         [
-            '<div id="timeline-live" aria-hidden="true"></div>',
+            f'<div id="{end_anchor}" aria-hidden="true"></div>',
             '<footer><a href="/days">Jours</a> · '
             f'<a href="{escape(trace_json_url)}">JSON</a> · '
             f'<a href="{escape(trace_markdown_url)}">Markdown</a></footer>',

@@ -258,10 +258,23 @@ def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_pat
     html = html_response.get_data(as_text=True)
     assert html_response.status_code == 200
     assert html_response.mimetype == "text/html"
-    assert "<h1>Trace du 2026-07-04</h1>" in html
+    assert "<h1>Journal du 2026-07-04</h1>" in html
     assert "day4.py" in html
     assert "day3.py" not in html
     assert '<nav class="sidebar"' in html
+    assert 'href="#resume-jour">Résumé du jour</a>' in html
+    assert '<section class="summary" id="resume-jour">' in html
+    assert "<h2>Résumé du jour</h2>" in html
+    assert 'href="#timeline-end">Fin du jour</a>' in html
+    assert '<div id="timeline-end" aria-hidden="true"></div>' in html
+    assert 'id="maintenant"' not in html
+    assert 'id="reprise"' not in html
+    assert 'id="etat-systeme"' not in html
+    assert ">Maintenant</a>" not in html
+    assert ">Reprise</a>" not in html
+    assert ">État système</a>" not in html
+    assert ">Direct</a>" not in html
+    assert '<section class="session" id="session-1">' in html
     assert 'href="/days">Jours</a>' in html
     assert 'href="/trace/2026-07-04">JSON</a>' in html
     assert 'href="/trace/2026-07-04.md">Markdown</a>' in html
