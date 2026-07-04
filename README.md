@@ -1,12 +1,16 @@
 # Pulse V2
 
-Pulse V0 observes local activity, stores an append-only trace, groups nearby
-events into sessions, and reconstructs a readable view of the current day.
+Pulse V2 observe l’activité locale de développement, conserve une trace locale en append-only, regroupe les événements en sessions et reconstruit une vue lisible de la journée en cours.
 
-The first vertical slice supports `file_changed` and `terminal_finished`
-activities through a local Flask API bound to `127.0.0.1`.
+La version actuelle prend en charge trois signaux d’activité :
 
-## Setup
+- `terminal_finished` depuis le watcher Zsh du terminal ;
+- `file_changed` depuis le watcher de fichiers du workspace ;
+- `app_activated` depuis le watcher macOS de l’application active.
+
+Pulse V2 expose une page HTML locale, une trace JSON et une trace Markdown via une API Flask liée à `127.0.0.1`.
+
+## Installation
 
 ```bash
 cd /Users/yugz/Projets/Pulse_V2
@@ -20,34 +24,33 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests_v2
 ```
 
-## Run
+## Lancement
 
-Start the daemon, file watcher, and macOS application watcher together:
+Lancer ensemble le daemon, le watcher de fichiers et le watcher d’application macOS :
 
 ```bash
 ./scripts/dev.sh
 ```
 
-The local page is available at `http://127.0.0.1:5000/`. Press `Ctrl-C` to stop
-all processes.
+Le watcher de fichiers observe le dossier depuis lequel `scripts/dev.sh` est lancé. La page locale est disponible sur `http://127.0.0.1:5000/`. Appuyer sur `Ctrl-C` pour arrêter tous les processus.
 
-To run only the daemon:
+Pour lancer uniquement le daemon :
 
 ```bash
 .venv/bin/python -m daemon_v2.main
 ```
 
-The V2 SQLite database is created at `~/.pulse_v2/trace.db`. It is not migrated
-from or shared with Pulse V1 databases under `~/.pulse`. Override the V2 path
-with `PULSE_V2_DB_PATH=/path/to/trace.db`.
+La base SQLite V2 est créée dans `~/.pulse_v2/trace.db`. Elle n’est ni migrée depuis Pulse V1, ni partagée avec les anciennes bases situées dans `~/.pulse`. Le chemin peut être surchargé avec `PULSE_V2_DB_PATH=/chemin/vers/trace.db`.
 
-Open the local daily activity page at:
+Ouvrir la page locale de l’activité du jour :
 
 ```text
 http://127.0.0.1:5000/
 ```
 
-## Send an activity
+La page affiche un résumé déterministe de la journée, les sessions, les commandes terminal, les changements de fichiers regroupés par vague de modification et les applications actives résumées par session.
+
+## Envoyer une activité
 
 ```bash
 curl -X POST http://127.0.0.1:5000/activities \
@@ -57,11 +60,11 @@ curl -X POST http://127.0.0.1:5000/activities \
     "occurred_at": "2026-07-03T19:30:00+02:00",
     "command": "pytest tests_v2",
     "exit_code": 0,
-    "cwd": "/Users/yugz/Projets/Pulse"
+    "cwd": "/Users/yugz/Projets/Pulse_V2"
   }'
 ```
 
-Example file activity:
+Exemple d’activité fichier :
 
 ```bash
 curl -X POST http://127.0.0.1:5000/activities \
@@ -74,66 +77,58 @@ curl -X POST http://127.0.0.1:5000/activities \
   }'
 ```
 
-## Read today's trace
+## Lire la trace du jour
 
 ```bash
 curl http://127.0.0.1:5000/trace/today
 ```
 
-For a human-readable Markdown trace grouped by session:
+Pour une trace Markdown lisible, regroupée par session :
 
 ```bash
 curl http://127.0.0.1:5000/trace/today.md
 ```
 
-## Terminal watcher
+## Watcher terminal
 
-Source the watcher manually from an interactive Zsh session:
+Sourcer manuellement le watcher depuis une session Zsh interactive :
 
 ```bash
 source /Users/yugz/Projets/Pulse_V2/scripts/pulse_terminal_watcher.zsh
 ```
 
-To load it in future Zsh sessions, add this line yourself to `~/.zshrc`:
+Pour le charger dans les futures sessions Zsh, ajouter soi-même cette ligne dans `~/.zshrc` :
 
 ```zsh
 source /Users/yugz/Projets/Pulse_V2/scripts/pulse_terminal_watcher.zsh
 ```
 
-The watcher records the command, working directory, start and finish times, and
-exit code. Delivery runs in the background and fails silently when the daemon
-is unavailable.
+Le watcher enregistre la commande, le dossier courant, les heures de début et de fin, ainsi que le code de sortie. L’envoi se fait en arrière-plan et échoue silencieusement si le daemon n’est pas disponible. Ce watcher n’est pas lancé par `scripts/dev.sh` ; il doit être sourcé depuis Zsh.
 
-## File watcher
+## Watcher de fichiers
 
-Start the polling watcher manually with one explicit workspace:
+Lancer manuellement le watcher par polling avec un workspace explicite :
 
 ```bash
 .venv/bin/python -m daemon_v2.file_watcher /Users/yugz/Projets/Pulse_V2
 ```
 
-It reports created, modified, and deleted files to the local Pulse daemon.
-Technical paths such as `.git`, `.venv`, caches, `*.pyc`, `*.db`, and
-`.DS_Store` are ignored. The watcher keeps running silently if the daemon is
-unavailable. Stop it with `Ctrl-C`.
+Il envoie les fichiers créés, modifiés et supprimés au daemon local Pulse. Les chemins techniques comme `.git`, `.venv`, les caches, `*.pyc`, `*.db` et `.DS_Store` sont ignorés. Le watcher continue de tourner silencieusement si le daemon est indisponible. L’arrêter avec `Ctrl-C`.
 
-## Application watcher
+## Watcher d’application
 
-On macOS, start the frontmost-application watcher manually with:
+Sur macOS, lancer manuellement le watcher de l’application active avec :
 
 ```bash
 .venv/bin/python -m daemon_v2.app_watcher
 ```
 
-It uses the local macOS `lsappinfo` command, records only application changes,
-and does not request window titles or Accessibility access. `scripts/dev.sh`
-starts this watcher together with the daemon and file watcher.
+Il utilise la commande locale macOS `lsappinfo`, enregistre uniquement les changements d’application et ne demande ni titre de fenêtre ni accès Accessibility. `scripts/dev.sh` lance ce watcher avec le daemon et le watcher de fichiers.
 
-## V0 limits
+## Limites actuelles
 
-- Input is accepted through the local HTTP API and optional terminal/file watchers.
-- Sessions use a fixed 30-minute inactivity gap.
-- Commands receive basic secret redaction, not shell-aware parsing.
-- SQLite is local and single-node; there is no retention or migration system yet.
-- The daemon has no authentication because it only binds to `127.0.0.1`.
-# watcher test
+- Les entrées sont acceptées via l’API HTTP locale et les watchers optionnels terminal, fichiers et application.
+- Les sessions utilisent une coupure fixe après 30 minutes d’inactivité.
+- Les commandes reçoivent une redaction basique des secrets, sans parsing shell avancé.
+- SQLite est local et mono-machine ; il n’y a pas encore de système de rétention ou de migration.
+- Le daemon n’a pas d’authentification, car il écoute uniquement sur `127.0.0.1`.
