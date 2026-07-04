@@ -675,10 +675,28 @@ def build_daily_trace(
             }
         )
 
+    merged_sessions = []
+    for session in sessions:
+        if (
+            merged_sessions
+            and datetime.fromisoformat(session["started_at"])
+            <= datetime.fromisoformat(merged_sessions[-1]["ended_at"])
+        ):
+            previous = merged_sessions[-1]
+            previous["activities"] = sorted(
+                previous["activities"] + session["activities"],
+                key=lambda activity: (activity["occurred_at"], activity["id"]),
+            )
+            previous["started_at"] = previous["activities"][0]["occurred_at"]
+            previous["ended_at"] = previous["activities"][-1]["occurred_at"]
+            previous["activity_count"] = len(previous["activities"])
+        else:
+            merged_sessions.append(session)
+
     return {
         "date": selected_day.isoformat(),
         "timezone": str(zone),
         "activity_count": len(activities),
-        "session_count": len(sessions),
-        "sessions": sessions,
+        "session_count": len(merged_sessions),
+        "sessions": merged_sessions,
     }

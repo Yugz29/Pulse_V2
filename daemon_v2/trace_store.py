@@ -54,8 +54,8 @@ class TraceStore:
         recorded_at = datetime.now(timezone.utc)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            latest = self._latest_session(connection)
-            session_id = select_session(activity.occurred_at_utc, latest)
+            sessions = self._sessions(connection)
+            session_id = select_session(activity.occurred_at_utc, sessions)
             cursor = connection.execute(
                 """
                 INSERT INTO activities (
@@ -76,25 +76,25 @@ class TraceStore:
             activity_id = int(cursor.lastrowid)
         return StoredActivity(activity_id, session_id, activity, recorded_at)
 
-    def _latest_session(self, connection: sqlite3.Connection) -> Session | None:
-        row = connection.execute(
+    def _sessions(self, connection: sqlite3.Connection) -> list[Session]:
+        rows = connection.execute(
             """
             SELECT session_id, MIN(occurred_at) AS started_at,
                    MAX(occurred_at) AS ended_at, COUNT(*) AS activity_count
             FROM activities
             GROUP BY session_id
-            ORDER BY ended_at DESC
-            LIMIT 1
+            ORDER BY started_at ASC
             """
-        ).fetchone()
-        if row is None:
-            return None
-        return Session(
-            id=row["session_id"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            ended_at=datetime.fromisoformat(row["ended_at"]),
-            activity_count=row["activity_count"],
-        )
+        ).fetchall()
+        return [
+            Session(
+                id=row["session_id"],
+                started_at=datetime.fromisoformat(row["started_at"]),
+                ended_at=datetime.fromisoformat(row["ended_at"]),
+                activity_count=row["activity_count"],
+            )
+            for row in rows
+        ]
 
     def activities_between(self, start: datetime, end: datetime) -> list[StoredActivity]:
         with self._connect() as connection:
