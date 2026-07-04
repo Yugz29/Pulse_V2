@@ -89,10 +89,17 @@ def run(repo_root: Path, poll_interval: float, debounce: float) -> int:
             next_snapshot = snapshot(repo_root)
             if next_snapshot != current_snapshot:
                 current_snapshot = next_snapshot
+                if pending_reload_at is None:
+                    print(
+                        "Pulse dev-reload: changement détecté, "
+                        f"attente volontaire de {debounce:g} s avant redémarrage "
+                        "pour laisser les watchers enregistrer l’activité…",
+                        flush=True,
+                    )
                 pending_reload_at = time.monotonic() + debounce
 
             if pending_reload_at is not None and time.monotonic() >= pending_reload_at:
-                print("Pulse dev-reload: changement détecté, rechargement…", flush=True)
+                print("Pulse dev-reload: redémarrage…", flush=True)
                 stop_pulse(process)
                 process = start_pulse(repo_root)
                 pending_reload_at = None
@@ -104,7 +111,7 @@ def run(repo_root: Path, poll_interval: float, debounce: float) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reload Pulse V2 during development")
     parser.add_argument("--poll", type=float, default=0.5)
-    parser.add_argument("--debounce", type=float, default=0.75)
+    parser.add_argument("--debounce", type=float, default=2.0)
     args = parser.parse_args()
     if args.poll <= 0 or args.debounce < 0:
         parser.error("--poll must be positive and --debounce must not be negative")
