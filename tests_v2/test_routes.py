@@ -24,6 +24,27 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert "--bg:#11151a" in html
     assert "color-scheme:dark" in html
     assert "<h1>Trace du " in html
+    assert (
+        '<nav class="sidebar" aria-label="Navigation de la timeline">'
+        in html
+    )
+    assert '<a class="nav-main" href="#maintenant">Maintenant</a>' in html
+    assert (
+        '<a class="nav-main nav-live nav-bottom" href="#timeline-live">Direct</a>'
+        in html
+    )
+    assert '<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>' in html
+    assert '<a class="nav-main" href="#etat-systeme">État système</a>' in html
+    assert '<a class="nav-session" href="#session-1">Session 1</a>' in html
+    assert '<section class="current" id="maintenant">' in html
+    assert '<section class="summary" id="aujourdhui">' in html
+    assert '<section class="system" id="etat-systeme">' in html
+    assert '<section class="session" id="session-1">' in html
+    assert '<div id="timeline-live" aria-hidden="true"></div>' in html
+    assert html.index('<section class="session" id="session-1">') < html.index(
+        '<div id="timeline-live"'
+    )
+    assert "<script" not in html
     assert "<h2>État système</h2>" in html
     assert "<dt>Daemon</dt><dd>running</dd>" in html
     assert f"<dt>Base SQLite</dt><dd>{tmp_path / 'trace.db'}</dd>" in html

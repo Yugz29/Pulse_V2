@@ -511,7 +511,7 @@ def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
     assert "Finder" not in markdown
     assert "loginwindow" not in markdown
     assert "<dt>Sessions</dt><dd>1</dd>" in html
-    assert html.count('<section class="session">') == 1
+    assert html.count('<section class="session" id="session-') == 1
     assert "Apps actives : ChatGPT" in html
     assert "Finder" not in html
     assert "loginwindow" not in html
@@ -677,9 +677,34 @@ def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
     assert timeline_lines.count("### Pulse\\_Sandbox") == 1
     assert "### TEST" not in timeline_lines
     assert f"  - CWD : {weak_parent}" in timeline
-    assert html.count('class="project-separator">Pulse_V2</li>') == 2
-    assert html.count('class="project-separator">Pulse_Sandbox</li>') == 1
-    assert 'class="project-separator">TEST</li>' not in html
+    assert html.count('class="project-separator"') == 3
+    assert (
+        '<a class="nav-project" href="#session-1-projet-1">Pulse_V2</a>'
+        in html
+    )
+    assert (
+        '<a class="nav-project" href="#session-1-projet-2">'
+        "Pulse_Sandbox</a>"
+    ) in html
+    assert (
+        '<a class="nav-project" href="#session-1-projet-3">Pulse_V2</a>'
+        in html
+    )
+    assert (
+        'class="project-separator" id="session-1-projet-1">Pulse_V2</li>'
+        in html
+    )
+    assert (
+        'class="project-separator" '
+        'id="session-1-projet-2">Pulse_Sandbox</li>'
+    ) in html
+    assert (
+        'class="project-separator" id="session-1-projet-3">Pulse_V2</li>'
+        in html
+    )
+    assert 'class="nav-project"' in html
+    assert ">TEST</a>" not in html
+    assert ">TEST</li>" not in html
     assert f"CWD : {weak_parent}" in html
 
 

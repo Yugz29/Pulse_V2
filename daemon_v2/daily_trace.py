@@ -199,6 +199,34 @@ def _session_project_summaries(
     return summaries
 
 
+def _session_project_sequence(
+    session: dict[str, Any],
+    project_workspaces: set[str],
+) -> list[str]:
+    file_change_groups = _file_change_groups(session)
+    sequence = []
+    current_workspace = None
+    for activity in session["activities"]:
+        details = activity.get("details", {})
+        duplicate_file = (
+            activity["type"] == "file_changed"
+            and bool(
+                details.get("event", details.get("change"))
+                and details.get("path")
+            )
+            and id(activity) not in file_change_groups
+        )
+        workspace = _activity_workspace(activity)
+        if (
+            not duplicate_file
+            and workspace in project_workspaces
+            and workspace != current_workspace
+        ):
+            current_workspace = workspace
+            sequence.append(workspace)
+    return sequence
+
+
 def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
     displayed = []
     for session in trace["sessions"]:
@@ -682,6 +710,27 @@ def render_daily_trace_html(
         if current["recent_files"]
         else "Aucun"
     )
+    navigation = [
+        '<a class="nav-main" href="#maintenant">Maintenant</a>',
+        '<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>',
+    ]
+    if system_status:
+        navigation.append(
+            '<a class="nav-main" href="#etat-systeme">État système</a>'
+        )
+    for index, session in enumerate(displayed_sessions, start=1):
+        navigation.append(
+            f'<a class="nav-session" href="#session-{index}">Session {index}</a>'
+        )
+        for project_index, workspace in enumerate(
+            _session_project_sequence(session, project_workspaces), start=1
+        ):
+            navigation.append(
+                f'<a class="nav-project" '
+                f'href="#session-{index}-projet-{project_index}">'
+                f"{escape(Path(workspace).name)}</a>"
+            )
+    navigation.append('<a class="nav-main nav-live nav-bottom" href="#timeline-live">Direct</a>')
     body = [
         "<!doctype html>",
         '<html lang="fr"><head><meta charset="utf-8">',
@@ -690,8 +739,19 @@ def render_daily_trace_html(
         """<style>
 :root{color-scheme:dark;--bg:#11151a;--panel:#191f26;--panel-soft:#161c22;
 --border:#2a333d;--text:#d7dee7;--muted:#8f9aaa;--link:#83a9d8}
-*{box-sizing:border-box}body{font:16px/1.6 system-ui,sans-serif;max-width:980px;
-margin:0 auto;padding:2.5rem 2rem 4rem;background:var(--bg);color:var(--text)}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}
+body{font:16px/1.6 system-ui,sans-serif;margin:0;padding:2.5rem 2rem 4rem;
+background:var(--bg);color:var(--text)}.page-shell{max-width:1180px;margin:0 auto;
+display:grid;grid-template-columns:12rem minmax(0,1fr);gap:2rem;align-items:start}
+.sidebar{position:sticky;top:1rem;background:var(--panel-soft);border:1px solid var(--border);
+border-radius:10px;padding:.9rem}.sidebar h2{font-size:.78rem;text-transform:uppercase;
+letter-spacing:.08em;color:var(--muted);margin:0 0 .55rem}.sidebar a{display:block;
+padding:.22rem .4rem;border-radius:5px;color:#aebdcb;font-size:.84rem}
+.sidebar a:hover{background:#202832;text-decoration:none;color:#dbe5ef}
+.sidebar .nav-live{color:#8fc6a1}
+.sidebar .nav-bottom{margin-top:.8rem;border-top:1px solid var(--border);padding-top:.6rem}
+.nav-session{margin-top:.45rem;font-weight:650;color:#c6d2df!important}
+.nav-project{padding-left:1.15rem!important;color:#829bb6!important;font-size:.78rem!important}
 header{margin-bottom:2rem}h1{font-size:2rem;letter-spacing:-.025em;margin:0 0 .25rem}
 h2{color:#e4eaf1;letter-spacing:-.01em}.meta,.detail{color:var(--muted)}
 .current,.summary,.system,.session{background:var(--panel);border:1px solid var(--border);
@@ -727,11 +787,20 @@ color:#b8c2cd}.session-summary li{margin:.18rem 0}
 .session-project-summary h4{margin:0 0 .3rem;color:#8fb4dd;font-size:.88rem}
 .detail{font-size:.88rem;margin-top:.4rem}footer{margin-top:2.5rem;color:var(--muted);
 font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
-@media(max-width:700px){body{padding:1.5rem 1rem 3rem}.current dl,.summary dl,
+@media(max-width:850px){body{padding:1.5rem 1rem 3rem}.page-shell{display:block}
+.sidebar{position:static;margin-bottom:1.25rem}.sidebar a{display:inline-block}
+.nav-session{margin-top:0}.nav-project{padding-left:.4rem!important}
+.current dl,.summary dl,
 .system dl{grid-template-columns:1fr;gap:.1rem}.current dd,.summary dd,.system dd{
 margin-bottom:.55rem}.event{grid-template-columns:3.25rem 1fr;gap:.65rem}.content{
 grid-column:2}.current,.summary,.system,.session{padding:1rem}}
 </style></head><body>""",
+        '<div class="page-shell">',
+        '<nav class="sidebar" aria-label="Navigation de la timeline">',
+        "<h2>Navigation</h2>",
+        *navigation,
+        "</nav>",
+        "<main>",
         "<header>",
         f"<h1>Trace du {escape(trace['date'])}</h1>",
         (
@@ -739,7 +808,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
             f'{trace["session_count"]} session(s)</div>'
         ),
         "</header>",
-        '<section class="current"><h2>Maintenant</h2><dl>',
+        '<section class="current" id="maintenant"><h2>Maintenant</h2><dl>',
         f"<dt>Projet probable</dt><dd>{escape(str(current['project']))}</dd>",
         f"<dt>Workspace</dt><dd>{escape(str(current['workspace']))}</dd>",
         f"<dt>App active</dt><dd>{escape(str(current['app']))}</dd>",
@@ -748,7 +817,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         f"<dt>Session active depuis</dt><dd>{current['session_started_at']}</dd>",
         f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
         "</dl></section>",
-        '<section class="summary"><h2>Aujourd’hui</h2><dl>',
+        '<section class="summary" id="aujourdhui"><h2>Aujourd’hui</h2><dl>',
         f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
@@ -767,7 +836,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         workspace = system_status["primary_workspace"] or "Non détecté"
         body.extend(
             [
-                '<section class="system"><h2>État système</h2><dl>',
+                '<section class="system" id="etat-systeme"><h2>État système</h2><dl>',
                 f"<dt>Daemon</dt><dd>{escape(system_status['daemon'])}</dd>",
                 (
                     "<dt>URL locale</dt><dd>"
@@ -808,7 +877,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         )
         body.extend(
             [
-                '<section class="session">',
+                f'<section class="session" id="session-{index}">',
                 f"<h2>Session {index} · {started_at}–{ended_at}</h2>",
             ]
         )
@@ -846,6 +915,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         app_activation_counts = _app_activation_counts(session)
         rendered_app_activations = False
         rendered_project = None
+        rendered_project_index = 0
 
         for activity in session["activities"]:
             details = activity.get("details", {})
@@ -870,8 +940,10 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
                 and activity_workspace != rendered_project
             ):
                 rendered_project = activity_workspace
+                rendered_project_index += 1
                 body.append(
-                    '<li class="project-separator">'
+                    f'<li class="project-separator" '
+                    f'id="session-{index}-projet-{rendered_project_index}">'
                     f"{escape(Path(activity_workspace).name)}</li>"
                 )
             if activity["type"] == "app_activated":
@@ -959,9 +1031,10 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
 
     body.extend(
         [
+            '<div id="timeline-live" aria-hidden="true"></div>',
             '<footer><a href="/trace/today">JSON</a> · '
             '<a href="/trace/today.md">Markdown</a></footer>',
-            "</body></html>",
+            "</main></div></body></html>",
         ]
     )
     return "\n".join(body)
