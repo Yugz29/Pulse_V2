@@ -38,11 +38,16 @@ Le watcher de fichiers observe le dossier depuis lequel `scripts/dev.sh` est lan
 
 ```bash
 make dev
+make dev-reload
 make test
 make status
 make reset
 make help
 ```
+
+`make dev-reload` est réservé au développement. Il surveille les sources du
+dépôt par polling et redémarre Pulse après un court debounce, sans utiliser les
+événements `file_changed` ni écrire directement dans SQLite.
 
 - `make dev` : lance Pulse localement ;
 - `make test` : lance les tests ;
