@@ -140,6 +140,44 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
     ) in markdown
 
 
+def test_session_summary_nests_and_limits_long_file_lists(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    workspace = "/project/Pulse"
+    first_at = datetime(2026, 7, 3, 21, 30, tzinfo=timezone.utc)
+    for index in range(5):
+        for offset, event in enumerate(("created", "modified")):
+            path = f"{workspace}/{event[0]}{index + 1}.py"
+            store.append(
+                Activity(
+                    "file_changed",
+                    first_at + timedelta(seconds=index * 2 + offset),
+                    "filesystem",
+                    f"{event.capitalize()} {path}",
+                    {"path": path, "event": event, "workspace": workspace},
+                )
+            )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert (
+        "#### Pulse\n"
+        "- Fichiers :\n"
+        "  - Créés : c1.py, c2.py, c3.py, +2 autres\n"
+        "  - Modifiés : m1.py, m2.py, m3.py, +2 autres"
+    ) in markdown
+    assert (
+        "<li>Fichiers :<ul>"
+        "<li>Créés : c1.py, c2.py, c3.py, +2 autres</li>"
+        "<li>Modifiés : m1.py, m2.py, m3.py, +2 autres</li>"
+        "</ul></li>"
+    ) in html
+    assert "- 21:30 · **file\\_changed** — Fichiers modifiés :" in markdown
+    assert "Created `c5.py`" in markdown
+    assert "Modified `m5.py`" in markdown
+
+
 def test_does_not_coalesce_same_file_across_sessions(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     path = "/project/a.py"

@@ -12,6 +12,7 @@ from .trace_store import TraceStore
 
 IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu", "Finder", "loginwindow"}
 TERMINAL_LABEL_ORDER = ("test", "git", "pulse", "erreur")
+SummaryFact = str | tuple[str, list[str]]
 
 
 def _markdown_text(value: Any) -> str:
@@ -57,12 +58,55 @@ def _ranked_apps(counts: dict[str, int], limit: int = 5) -> list[tuple[str, int]
     return sorted(counts.items(), key=lambda item: -item[1])[:limit]
 
 
+def _file_summary_fact(
+    categories: list[tuple[str, list[str]]],
+) -> SummaryFact | None:
+    categories = [(label, paths) for label, paths in categories if paths]
+    if not categories:
+        return None
+    if len(categories) == 1 and len(categories[0][1]) <= 3:
+        label, paths = categories[0]
+        return f"Fichiers {label.lower()} : {', '.join(paths)}"
+
+    details = []
+    for label, paths in categories:
+        displayed = paths[:3]
+        remaining = len(paths) - len(displayed)
+        values = displayed + ([f"+{remaining} autres"] if remaining else [])
+        details.append(f"{label} : {', '.join(values)}")
+    return ("Fichiers :", details)
+
+
+def _markdown_summary_facts(facts: list[SummaryFact]) -> list[str]:
+    lines = []
+    for fact in facts:
+        if isinstance(fact, tuple):
+            label, details = fact
+            lines.append(f"- {_markdown_text(label)}")
+            lines.extend(f"  - {_markdown_text(detail)}" for detail in details)
+        else:
+            lines.append(f"- {_markdown_text(fact)}")
+    return lines
+
+
+def _html_summary_facts(facts: list[SummaryFact]) -> str:
+    items = []
+    for fact in facts:
+        if isinstance(fact, tuple):
+            label, details = fact
+            nested = "".join(f"<li>{escape(detail)}</li>" for detail in details)
+            items.append(f"<li>{escape(label)}<ul>{nested}</ul></li>")
+        else:
+            items.append(f"<li>{escape(fact)}</li>")
+    return f"<ul>{''.join(items)}</ul>"
+
+
 def build_session_summary(
     session: dict[str, Any],
     project_workspaces: set[str],
     *,
     include_projects: bool = True,
-) -> list[str]:
+) -> list[SummaryFact]:
     project_sequence: list[str] = []
     projects: list[str] = []
     created_files: list[str] = []
@@ -143,19 +187,15 @@ def build_session_summary(
             )
         facts.append(project_fact)
 
-    file_parts = []
-    if created_files:
-        file_parts.append(f"créés — {', '.join(created_files[:5])}")
-    if modified_files:
-        file_parts.append(f"modifiés — {', '.join(modified_files[:5])}")
-    if deleted_files:
-        file_parts.append(f"supprimés — {', '.join(deleted_files[:5])}")
-    if file_parts:
-        if len(file_parts) == 1:
-            name, values = file_parts[0].split(" — ", 1)
-            facts.append(f"Fichiers {name} : {values}")
-        else:
-            facts.append(f"Fichiers : {' ; '.join(file_parts)}")
+    file_fact = _file_summary_fact(
+        [
+            ("Créés", created_files),
+            ("Modifiés", modified_files),
+            ("Supprimés", deleted_files),
+        ]
+    )
+    if file_fact:
+        facts.append(file_fact)
 
     test_parts = []
     if passed_tests:
@@ -174,7 +214,7 @@ def build_session_summary(
 def _session_project_summaries(
     session: dict[str, Any],
     project_workspaces: set[str],
-) -> list[tuple[str, list[str]]]:
+) -> list[tuple[str, list[SummaryFact]]]:
     grouped_activities: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
     active_workspace = None
     for activity in session["activities"]:
@@ -561,14 +601,14 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
             lines.append("### Résumé de session")
             for project, facts in project_summaries:
                 lines.append(f"#### {_markdown_text(project)}")
-                lines.extend(f"- {_markdown_text(fact)}" for fact in facts)
+                lines.extend(_markdown_summary_facts(facts))
             lines.append("")
         else:
             session_facts = build_session_summary(session, project_workspaces)
             if session_facts:
                 lines.extend(
                     ["### Résumé de session"]
-                    + [f"- {_markdown_text(fact)}" for fact in session_facts]
+                    + _markdown_summary_facts(session_facts)
                     + [""]
                 )
 
@@ -783,6 +823,7 @@ border-top:0;padding-top:.25rem}
 border:1px solid #26313b;border-radius:8px}.session-summary h3{font-size:.9rem;
 color:#aebdcb;margin:0 0 .4rem}.session-summary ul{margin:0;padding-left:1.2rem;
 color:#b8c2cd}.session-summary li{margin:.18rem 0}
+.session-summary ul ul{margin:.25rem 0 0;padding-left:1.3rem;color:#aeb8c4}
 .session-project-summary+.session-project-summary{margin-top:.7rem}
 .session-project-summary h4{margin:0 0 .3rem;color:#8fb4dd;font-size:.88rem}
 .detail{font-size:.88rem;margin-top:.4rem}footer{margin-top:2.5rem;color:var(--muted);
@@ -886,26 +927,12 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
                 summary_html = "".join(
                     '<div class="session-project-summary">'
                     f"<h4>{escape(project)}</h4>"
-                    + (
-                        "<ul>"
-                        + "".join(
-                            f"<li>{escape(fact)}</li>" for fact in facts
-                        )
-                        + "</ul>"
-                        if facts
-                        else ""
-                    )
+                    + (_html_summary_facts(facts) if facts else "")
                     + "</div>"
                     for project, facts in project_summaries
                 )
             else:
-                summary_html = (
-                    "<ul>"
-                    + "".join(
-                        f"<li>{escape(fact)}</li>" for fact in session_facts
-                    )
-                    + "</ul>"
-                )
+                summary_html = _html_summary_facts(session_facts)
             body.append(
                 '<div class="session-summary"><h3>Résumé de session</h3>'
                 f"{summary_html}</div>"
