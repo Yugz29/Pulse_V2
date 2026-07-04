@@ -58,6 +58,16 @@ Vérifier l’état local sans démarrer de processus :
 
 Le même état est disponible en JSON sur `http://127.0.0.1:5000/status`.
 
+Réinitialiser explicitement la trace de développement, après avoir arrêté
+Pulse :
+
+```bash
+./scripts/reset-dev.sh
+```
+
+Le script cible `~/.pulse_v2/trace.db`, respecte `PULSE_V2_DB_PATH`, demande
+confirmation et refuse tout chemin situé sous `~/.pulse`.
+
 ## Envoyer une activité
 
 ```bash
