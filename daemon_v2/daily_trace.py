@@ -10,6 +10,7 @@ from .trace_store import TraceStore
 
 
 IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu"}
+TERMINAL_LABEL_ORDER = ("test", "git", "pulse", "erreur")
 
 
 def _markdown_text(value: Any) -> str:
@@ -88,10 +89,47 @@ def _file_change_groups(
     }
 
 
+def _terminal_labels(activity: dict[str, Any]) -> list[str]:
+    details = activity.get("details", {})
+    command = details.get("command")
+    command_lines = (
+        [" ".join(line.split()) for line in command.splitlines() if line.strip()]
+        if isinstance(command, str)
+        else []
+    )
+    labels: set[str] = set()
+    for line in command_lines:
+        if any(
+            line == prefix or line.startswith(f"{prefix} ")
+            for prefix in ("pytest", "python -m pytest", "npm test", "swift test")
+        ):
+            labels.add("test")
+        if any(
+            line == prefix or line.startswith(f"{prefix} ")
+            for prefix in ("git commit", "git push", "git pull", "git status")
+        ):
+            labels.add("git")
+        if any(
+            line == prefix or line.startswith(f"{prefix} ")
+            for prefix in (
+                "./scripts/dev.sh",
+                "python -m daemon_v2.main",
+                "python -m daemon_v2.file_watcher",
+                "python -m daemon_v2.app_watcher",
+            )
+        ):
+            labels.add("pulse")
+    exit_code = details.get("exit_code")
+    if isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0:
+        labels.add("erreur")
+    return [label for label in TERMINAL_LABEL_ORDER if label in labels]
+
+
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     workspace_counts: dict[str, int] = {}
     app_counts: dict[str, int] = {}
     terminal_count = 0
+    terminal_label_counts = {label: 0 for label in TERMINAL_LABEL_ORDER}
     file_paths: set[str] = set()
     last_activity: dict[str, Any] | None = None
 
@@ -105,6 +143,8 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
                 workspace_counts[workspace] = workspace_counts.get(workspace, 0) + 1
             if activity["type"] == "terminal_finished":
                 terminal_count += 1
+                for label in _terminal_labels(activity):
+                    terminal_label_counts[label] += 1
             elif activity["type"] == "file_changed" and details.get("path"):
                 file_paths.add(details["path"])
             elif activity["type"] == "app_activated" and details.get("app"):
@@ -143,6 +183,10 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
         "session_count": trace["session_count"],
         "activity_count": trace["activity_count"],
         "terminal_count": terminal_count,
+        "test_count": terminal_label_counts["test"],
+        "git_count": terminal_label_counts["git"],
+        "error_count": terminal_label_counts["erreur"],
+        "pulse_count": terminal_label_counts["pulse"],
         "distinct_file_count": len(file_paths),
         "apps": app_counts,
         "last_activity_type": last_type,
@@ -171,6 +215,10 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Sessions : {summary['session_count']}",
         f"- Événements : {summary['activity_count']}",
         f"- Commandes terminal : {summary['terminal_count']}",
+        f"- Tests : {summary['test_count']}",
+        f"- Git : {summary['git_count']}",
+        f"- Erreurs : {summary['error_count']}",
+        f"- Commandes Pulse : {summary['pulse_count']}",
         f"- Fichiers modifiés : {summary['distinct_file_count']}",
         f"- Apps principales : {', '.join(apps) if apps else 'Aucune'}",
         f"- Dernière activité utile : {last_activity}",
@@ -199,6 +247,14 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 [line.strip() for line in command.splitlines() if line.strip()]
                 if isinstance(command, str)
                 else []
+            )
+            terminal_labels = (
+                _terminal_labels(activity)
+                if activity["type"] == "terminal_finished"
+                else []
+            )
+            label_text = "".join(
+                f" {_markdown_inline_code(label)}" for label in terminal_labels
             )
 
             event = details.get("event", details.get("change"))
@@ -247,10 +303,18 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                 exit_code = details.get("exit_code")
                 status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
                 lines.append(
-                    f"- {occurred_at} · **{activity_type}** — Command {status}:"
+                    f"- {occurred_at} · **{activity_type}**{label_text} — "
+                    f"Command {status}:"
                 )
                 for command_line in command_lines:
                     lines.append(f"  - {_markdown_inline_code(command_line)}")
+            elif activity["type"] == "terminal_finished" and command_lines:
+                exit_code = details.get("exit_code")
+                status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
+                lines.append(
+                    f"- {occurred_at} · **{activity_type}**{label_text} — "
+                    f"Command {status}: {_markdown_inline_code(command_lines[0])}"
+                )
             else:
                 summary = _markdown_text(activity["summary"])
                 lines.append(f"- {occurred_at} · **{activity_type}** — {summary}")
@@ -293,7 +357,8 @@ grid-template-columns:12rem 1fr;gap:.35rem 1rem}.summary dt{font-weight:600}
 grid-template-columns:4rem 9rem 1fr;gap:.75rem;padding:.65rem 0;
 border-top:1px solid #edf0f2}.event:first-child{border-top:0}.type{font-family:monospace;
 font-size:.85rem;color:#46515d}.content code{background:#eef1f4;padding:.1rem .3rem;
-border-radius:4px}.commands{margin:.4rem 0;padding-left:1.25rem}.detail{font-size:.9rem;
+border-radius:4px}.label{display:inline-block;background:#e5eaf0;border-radius:4px;
+padding:0 .25rem}.commands{margin:.4rem 0;padding-left:1.25rem}.detail{font-size:.9rem;
 margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
 @media(max-width:650px){.event{grid-template-columns:3.5rem 1fr}.content{grid-column:2}}
 </style></head><body>""",
@@ -310,6 +375,10 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
         f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
+        f"<dt>Tests</dt><dd>{summary['test_count']}</dd>",
+        f"<dt>Git</dt><dd>{summary['git_count']}</dd>",
+        f"<dt>Erreurs</dt><dd>{summary['error_count']}</dd>",
+        f"<dt>Commandes Pulse</dt><dd>{summary['pulse_count']}</dd>",
         f"<dt>Fichiers modifiés</dt><dd>{summary['distinct_file_count']}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
         f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
@@ -340,6 +409,11 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             workspace = details.get("workspace")
             event = details.get("event", details.get("change"))
             display_type = activity["type"]
+            terminal_labels = (
+                _terminal_labels(activity)
+                if activity["type"] == "terminal_finished"
+                else []
+            )
             if activity["type"] == "app_activated":
                 if details.get("app") not in app_activation_counts:
                     continue
@@ -394,6 +468,13 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
                         for line in command_lines
                     )
                     content = f"Command {status}:<ul class=\"commands\">{items}</ul>"
+                elif activity["type"] == "terminal_finished" and command_lines:
+                    exit_code = details.get("exit_code")
+                    status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
+                    content = (
+                        f"Command {status}: "
+                        f"<code>{escape(command_lines[0])}</code>"
+                    )
                 else:
                     content = escape(str(activity["summary"]))
 
@@ -405,10 +486,14 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             detail_html = "".join(
                 f'<div class="detail">{line}</div>' for line in detail_lines
             )
+            type_html = escape(display_type) + "".join(
+                f' <span class="label">{escape(label)}</span>'
+                for label in terminal_labels
+            )
             body.append(
                 '<li class="event">'
                 f'<time>{_display_time(activity["occurred_at"])}</time>'
-                f'<span class="type">{escape(display_type)}</span>'
+                f'<span class="type">{type_html}</span>'
                 f'<div class="content">{content}{detail_html}</div></li>'
             )
         body.extend(["</ul>", "</section>"])

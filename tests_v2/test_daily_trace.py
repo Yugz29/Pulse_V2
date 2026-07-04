@@ -38,7 +38,7 @@ def test_builds_structured_daily_trace(tmp_path):
         "## Session 1 — 08:00–08:05\n"
         "\n"
         "- 08:00 · **file\\_changed** — Modified a.py\n"
-        "- 08:05 · **terminal\\_finished** — Command succeeded: pytest\n"
+        "- 08:05 · **terminal\\_finished** `test` — Command succeeded: `pytest`\n"
         "  - CWD : /project\n"
         )
     )
@@ -88,7 +88,7 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
         == (
         "## Session 1 — 21:06–21:06\n"
         "\n"
-        "- 21:06 · **terminal\\_finished** — Command succeeded:\n"
+        "- 21:06 · **terminal\\_finished** `git` — Command succeeded:\n"
         "  - `git add .`\n"
         '  - `git commit -m "filter multiline terminal noise"`\n'
         "  - `git push`\n"
@@ -321,3 +321,51 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         assert row in html
     assert "## Session 1" in markdown
     assert "Session 1" in html
+
+
+def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)
+    commands = [
+        ("pytest tests_v2", 0),
+        ("git status", 0),
+        ("python -m daemon_v2.main", 1),
+        ("echo useful", 0),
+    ]
+    for index, (command, exit_code) in enumerate(commands):
+        status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
+        store.append(
+            Activity(
+                "terminal_finished",
+                first_at + timedelta(minutes=index),
+                "terminal",
+                f"Command {status}: {command}",
+                {"command": command, "exit_code": exit_code, "cwd": "/project"},
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    for line in (
+        "Commandes terminal : 4",
+        "Tests : 1",
+        "Git : 1",
+        "Erreurs : 1",
+        "Commandes Pulse : 1",
+    ):
+        assert line in markdown
+    assert "**terminal\\_finished** `test` — Command succeeded: `pytest tests_v2`" in markdown
+    assert "**terminal\\_finished** `git` — Command succeeded: `git status`" in markdown
+    assert (
+        "**terminal\\_finished** `pulse` `erreur` — "
+        "Command failed (1): `python -m daemon_v2.main`"
+    ) in markdown
+
+    for label in ("test", "git", "pulse", "erreur"):
+        assert f'<span class="label">{label}</span>' in html
+    assert "<dt>Tests</dt><dd>1</dd>" in html
+    assert "<dt>Git</dt><dd>1</dd>" in html
+    assert "<dt>Erreurs</dt><dd>1</dd>" in html
+    assert "<dt>Commandes Pulse</dt><dd>1</dd>" in html

@@ -23,7 +23,8 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert response.mimetype == "text/html"
     assert "<h1>Trace du " in html
     assert "Session 1" in html
-    assert "Command succeeded: pytest &lt;tests_v2&gt;" in html
+    assert "Command succeeded: <code>pytest &lt;tests_v2&gt;</code>" in html
+    assert '<span class="label">test</span>' in html
     assert 'href="/trace/today.md"' in html
 
 
