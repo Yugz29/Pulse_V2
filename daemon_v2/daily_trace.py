@@ -166,22 +166,22 @@ def _useful_activity_description(activity: dict[str, Any]) -> str:
     return activity["summary"]
 
 
+def _activity_workspace(activity: dict[str, Any]) -> str | None:
+    details = activity.get("details", {})
+    if details.get("workspace"):
+        return details["workspace"]
+    if activity["type"] == "terminal_finished" and details.get("cwd"):
+        return details["cwd"]
+    return None
+
+
 def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
     displayed_sessions = _displayed_sessions(trace)
     current_session = displayed_sessions[-1] if displayed_sessions else None
-    workspace_counts: dict[str, int] = {}
-    fallback_cwd = None
     recent_files = []
     seen_paths: set[str] = set()
 
     if current_session:
-        for activity in current_session["activities"]:
-            details = activity.get("details", {})
-            workspace = details.get("workspace")
-            if workspace:
-                workspace_counts[workspace] = workspace_counts.get(workspace, 0) + 1
-            if activity["type"] == "terminal_finished" and details.get("cwd"):
-                fallback_cwd = details["cwd"]
         for activity in reversed(current_session["activities"]):
             if activity["type"] != "file_changed":
                 continue
@@ -199,11 +199,7 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
             if len(recent_files) == 5:
                 break
 
-    workspace = (
-        max(workspace_counts, key=workspace_counts.get)
-        if workspace_counts
-        else fallback_cwd
-    )
+    workspace = None
     last_app = None
     last_command = None
     last_useful_activity = None
@@ -216,6 +212,9 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
                     last_app = app
             else:
                 last_useful_activity = activity
+                activity_workspace = _activity_workspace(activity)
+                if activity_workspace:
+                    workspace = activity_workspace
             if activity["type"] == "terminal_finished":
                 command_lines = [
                     line.strip()
@@ -249,6 +248,9 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
 
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     app_counts: dict[str, int] = {}
+    workspace_order: list[str] = []
+    workspace_counts: dict[str, int] = {}
+    explicit_file_workspaces: set[str] = set()
     terminal_count = 0
     terminal_label_counts = {label: 0 for label in TERMINAL_LABEL_ORDER}
     file_paths: set[str] = set()
@@ -256,6 +258,14 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     for session in trace["sessions"]:
         for activity in session["activities"]:
             details = activity.get("details", {})
+            workspace = _activity_workspace(activity)
+            if workspace:
+                if workspace not in workspace_counts:
+                    workspace_order.append(workspace)
+                    workspace_counts[workspace] = 0
+                workspace_counts[workspace] += 1
+                if activity["type"] == "file_changed" and details.get("workspace"):
+                    explicit_file_workspaces.add(workspace)
             if activity["type"] == "terminal_finished":
                 terminal_count += 1
                 for label in _terminal_labels(activity):
@@ -267,6 +277,14 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
                 if app not in IGNORED_APP_NAMES_FOR_RENDERING:
                     app_counts[app] = app_counts.get(app, 0) + 1
 
+    workspaces = [
+        workspace
+        for workspace in workspace_order
+        if workspace in explicit_file_workspaces
+        or workspace_counts[workspace] >= 2
+        or (Path(workspace) / ".git").exists()
+    ]
+
     return {
         "session_count": len(_displayed_sessions(trace)),
         "activity_count": trace["activity_count"],
@@ -277,6 +295,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
         "pulse_count": terminal_label_counts["pulse"],
         "distinct_file_count": len(file_paths),
         "apps": app_counts,
+        "workspaces": workspaces,
     }
 
 
@@ -298,6 +317,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
         for app, count in summary["apps"].items()
     ]
+    projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
     last_activity = (
         f"{_markdown_text(current['last_activity_type'])} — "
         f"{_markdown_text(current['last_activity_description'])}"
@@ -340,6 +360,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Erreurs : {summary['error_count']}",
         f"- Commandes Pulse : {summary['pulse_count']}",
         f"- Fichiers modifiés : {summary['distinct_file_count']}",
+        f"- Projets : {', '.join(projects) if projects else 'Aucun'}",
         f"- Apps principales : {', '.join(apps) if apps else 'Aucune'}",
         "",
         ]
@@ -460,6 +481,10 @@ def render_daily_trace_html(
         f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
         for app, count in summary["apps"].items()
     ]
+    projects = [
+        f'<span title="{escape(path)}">{escape(Path(path).name)}</span>'
+        for path in summary["workspaces"]
+    ]
     last_activity = (
         f"{escape(str(current['last_activity_type']))} — "
         f"{escape(str(current['last_activity_description']))}"
@@ -543,6 +568,7 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         f"<dt>Erreurs</dt><dd>{summary['error_count']}</dd>",
         f"<dt>Commandes Pulse</dt><dd>{summary['pulse_count']}</dd>",
         f"<dt>Fichiers modifiés</dt><dd>{summary['distinct_file_count']}</dd>",
+        f"<dt>Projets</dt><dd>{', '.join(projects) if projects else 'Aucun'}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
         "</dl></section>",
     ]

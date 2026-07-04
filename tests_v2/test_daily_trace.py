@@ -480,3 +480,74 @@ def test_current_state_limits_recent_files_to_five(tmp_path):
         "file_2.py",
         "file_1.py",
     ]
+
+
+def test_current_workspace_uses_latest_useful_event_and_today_lists_all_projects(
+    tmp_path,
+):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc)
+    workspaces = [
+        "/Users/yugz/Projets/Pulse_V2",
+        "/Users/yugz/Projets/TEST",
+        "/Users/yugz/Projets/TEST/Pulse_Sandbox",
+    ]
+    store.append(
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Modified {workspaces[0]}/README.md",
+            {
+                "path": f"{workspaces[0]}/README.md",
+                "event": "modified",
+                "workspace": workspaces[0],
+            },
+        )
+    )
+    store.append(
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=10),
+            "terminal",
+            "Command succeeded: mkdir Pulse_Sandbox",
+            {
+                "command": "mkdir Pulse_Sandbox",
+                "exit_code": 0,
+                "cwd": workspaces[1],
+            },
+        )
+    )
+    store.append(
+        Activity(
+            "file_changed",
+            first_at + timedelta(hours=1),
+            "filesystem",
+            f"Created {workspaces[2]}/README.md",
+            {
+                "path": f"{workspaces[2]}/README.md",
+                "event": "created",
+                "workspace": workspaces[2],
+            },
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    escaped_current_workspace = workspaces[2].replace("_", "\\_")
+
+    assert "- Projet probable : Pulse\\_Sandbox" in markdown
+    assert f"- Workspace : {escaped_current_workspace}" in markdown
+    assert "- Projets : Pulse\\_V2, Pulse\\_Sandbox" in markdown
+    projects_line = next(
+        line for line in markdown.splitlines() if line.startswith("- Projets :")
+    )
+    assert "TEST" not in projects_line
+    assert f"  - CWD : {workspaces[1]}" in markdown
+    assert "<dt>Projet probable</dt><dd>Pulse_Sandbox</dd>" in html
+    assert f"<dt>Workspace</dt><dd>{workspaces[2]}</dd>" in html
+    assert f'title="{workspaces[0]}">Pulse_V2</span>' in html
+    assert f'title="{workspaces[2]}">Pulse_Sandbox</span>' in html
+    assert f'title="{workspaces[1]}">TEST</span>' not in html
+    assert markdown.count("## Session ") == 2
