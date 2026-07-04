@@ -923,6 +923,8 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
 def render_daily_trace_html(
     trace: dict[str, Any],
     system_status: dict[str, Any] | None = None,
+    trace_json_url: str = "/trace/today",
+    trace_markdown_url: str = "/trace/today.md",
 ) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
@@ -1127,7 +1129,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         )
 
     if not displayed_sessions:
-        body.append("<p>Aucune activité aujourd’hui.</p>")
+        body.append("<p>Aucune activité pour cette journée.</p>")
 
     for index, session in enumerate(displayed_sessions, start=1):
         started_at = _display_time(session["started_at"])
@@ -1283,8 +1285,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         [
             '<div id="timeline-live" aria-hidden="true"></div>',
             '<footer><a href="/days">Jours</a> · '
-            '<a href="/trace/today">JSON</a> · '
-            '<a href="/trace/today.md">Markdown</a></footer>',
+            f'<a href="{escape(trace_json_url)}">JSON</a> · '
+            f'<a href="{escape(trace_markdown_url)}">Markdown</a></footer>',
             "</main></div></body></html>",
         ]
     )
@@ -1392,7 +1394,8 @@ def render_available_days_html(
             f"<p>{event_count} événement{'s' if event_count != 1 else ''} · "
             f"{session_count} session{'s' if session_count != 1 else ''}</p>"
             f"<p>Projets : {projects or 'Aucun'}</p>"
-            f'<nav><a href="/trace/{day}">JSON</a> · '
+            f'<nav><a href="/day/{day}">HTML</a> · '
+            f'<a href="/trace/{day}">JSON</a> · '
             f'<a href="/trace/{day}.md">Markdown</a></nav>'
             "</article>"
         )

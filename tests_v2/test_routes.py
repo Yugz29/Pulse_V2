@@ -200,6 +200,7 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     )
     assert "2 événements · 1 session" in html
     assert "Projets : Pulse_V2, Pulse_Sandbox" in html
+    assert 'href="/day/2026-07-04">HTML</a>' in html
     assert 'href="/trace/2026-07-04">JSON</a>' in html
     assert 'href="/trace/2026-07-04.md">Markdown</a>' in html
     assert "<script" not in html
@@ -253,6 +254,18 @@ def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_pat
     assert "day4.py" in markdown
     assert "day3.py" not in markdown
 
+    html_response = client.get("/day/2026-07-04")
+    html = html_response.get_data(as_text=True)
+    assert html_response.status_code == 200
+    assert html_response.mimetype == "text/html"
+    assert "<h1>Trace du 2026-07-04</h1>" in html
+    assert "day4.py" in html
+    assert "day3.py" not in html
+    assert '<nav class="sidebar"' in html
+    assert 'href="/days">Jours</a>' in html
+    assert 'href="/trace/2026-07-04">JSON</a>' in html
+    assert 'href="/trace/2026-07-04.md">Markdown</a>' in html
+
     empty_trace = client.get("/trace/2026-07-02").get_json()
     assert empty_trace["date"] == "2026-07-02"
     assert empty_trace["activity_count"] == 0
@@ -260,8 +273,17 @@ def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_pat
     assert "_Aucune activité._" in client.get(
         "/trace/2026-07-02.md"
     ).get_data(as_text=True)
+    empty_html = client.get("/day/2026-07-02")
+    assert empty_html.status_code == 200
+    assert "Aucune activité pour cette journée." in empty_html.get_data(
+        as_text=True
+    )
 
-    for path in ("/trace/not-a-date", "/trace/2026-02-30.md"):
+    for path in (
+        "/trace/not-a-date",
+        "/trace/2026-02-30.md",
+        "/day/not-a-date",
+    ):
         invalid_response = client.get(path)
         assert invalid_response.status_code == 400
         assert invalid_response.get_json() == {

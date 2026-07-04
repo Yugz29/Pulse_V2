@@ -111,6 +111,27 @@ def get_days():
     )
 
 
+@api.get("/day/<date_value>")
+def get_day(date_value):
+    try:
+        selected_date = _parse_trace_date(date_value)
+    except ValueError:
+        return jsonify({"error": "invalid date; expected YYYY-MM-DD"}), 400
+    trace = build_daily_trace(
+        current_app.config["TRACE_STORE"],
+        day=selected_date,
+    )
+    return Response(
+        render_daily_trace_html(
+            trace,
+            system_status=_build_status(trace),
+            trace_json_url=f"/trace/{date_value}",
+            trace_markdown_url=f"/trace/{date_value}.md",
+        ),
+        mimetype="text/html",
+    )
+
+
 @api.get("/trace/<date_value>")
 def get_dated_trace(date_value):
     try:
