@@ -483,22 +483,40 @@ def render_daily_trace_html(
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>Pulse — {escape(trace['date'])}</title>",
         """<style>
-body{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;
-background:#f6f7f9;color:#20242a}header{margin-bottom:2rem}h1{margin-bottom:.25rem}
-.meta,.detail{color:#626b76}.current,.summary,.system,.session{background:white;border:1px solid #dfe3e8;
-border-radius:10px;padding:1rem 1.25rem;margin:1rem 0}.session h2{font-size:1.1rem;
-margin:0 0 1rem}.current h2,.summary h2,.system h2{margin-top:0}.current dl,
-.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;gap:.35rem 1rem}
-.current dt,.summary dt,.system dt{font-weight:600}.current dd,.summary dd,.system dd{
-margin:0}.timeline{list-style:none;padding:0;
-margin:0}.event{display:grid;
-grid-template-columns:4rem 9rem 1fr;gap:.75rem;padding:.65rem 0;
-border-top:1px solid #edf0f2}.event:first-child{border-top:0}.type{font-family:monospace;
-font-size:.85rem;color:#46515d}.content code{background:#eef1f4;padding:.1rem .3rem;
-border-radius:4px}.label{display:inline-block;background:#e5eaf0;border-radius:4px;
-padding:0 .25rem}.commands{margin:.4rem 0;padding-left:1.25rem}.detail{font-size:.9rem;
-margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
-@media(max-width:650px){.event{grid-template-columns:3.5rem 1fr}.content{grid-column:2}}
+:root{color-scheme:dark;--bg:#11151a;--panel:#191f26;--panel-soft:#161c22;
+--border:#2a333d;--text:#d7dee7;--muted:#8f9aaa;--link:#83a9d8}
+*{box-sizing:border-box}body{font:16px/1.6 system-ui,sans-serif;max-width:980px;
+margin:0 auto;padding:2.5rem 2rem 4rem;background:var(--bg);color:var(--text)}
+header{margin-bottom:2rem}h1{font-size:2rem;letter-spacing:-.025em;margin:0 0 .25rem}
+h2{color:#e4eaf1;letter-spacing:-.01em}.meta,.detail{color:var(--muted)}
+.current,.summary,.system,.session{background:var(--panel);border:1px solid var(--border);
+border-radius:12px;padding:1.25rem 1.5rem;margin:1.25rem 0;box-shadow:0 8px 24px #0003}
+.current{border-top:3px solid #5d8fc4}.summary{border-top:3px solid #669b78}
+.system{border-top:3px solid #778493;background:var(--panel-soft)}
+.session{margin-top:1.5rem}.session h2{font-size:1.1rem;margin:0 0 1rem;color:#cbd5e1}
+.current h2,.summary h2,.system h2{font-size:1.2rem;margin:0 0 1rem}
+.current dl,.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;
+gap:.5rem 1.25rem;margin:0}.current dt,.summary dt,.system dt{font-weight:600;
+color:#aeb9c6}.current dd,.summary dd,.system dd{margin:0;min-width:0;
+overflow-wrap:anywhere}.timeline{list-style:none;padding:0;margin:0}.event{display:grid;
+grid-template-columns:4rem 10rem 1fr;gap:1rem;padding:.85rem .25rem;
+border-top:1px solid var(--border)}.event:first-child{border-top:0}.event time{
+color:var(--muted);font-variant-numeric:tabular-nums}.type{font-family:ui-monospace,
+SFMono-Regular,Menlo,monospace;font-size:.82rem;color:#9daaba;overflow-wrap:anywhere}
+.content{min-width:0}.content code,.current code{background:#222a33;color:#dce6f1;
+padding:.12rem .35rem;border:1px solid #303b47;border-radius:5px;overflow-wrap:anywhere}
+.label{display:inline-block;margin-top:.18rem;border:1px solid transparent;border-radius:999px;
+padding:.02rem .4rem;font-size:.72rem;font-weight:650}.label-test{background:#173528;
+border-color:#285940;color:#8fd5aa}.label-git{background:#29243f;border-color:#493d70;
+color:#b9a7ed}.label-pulse{background:#17333c;border-color:#285663;color:#86c9d8}
+.label-erreur{background:#3a2023;border-color:#6d363d;color:#e8a0a7}
+.commands{margin:.5rem 0;padding-left:1.35rem}.commands li{margin:.25rem 0}
+.detail{font-size:.88rem;margin-top:.4rem}footer{margin-top:2.5rem;color:var(--muted);
+font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+@media(max-width:700px){body{padding:1.5rem 1rem 3rem}.current dl,.summary dl,
+.system dl{grid-template-columns:1fr;gap:.1rem}.current dd,.summary dd,.system dd{
+margin-bottom:.55rem}.event{grid-template-columns:3.25rem 1fr;gap:.65rem}.content{
+grid-column:2}.current,.summary,.system,.session{padding:1rem}}
 </style></head><body>""",
         "<header>",
         f"<h1>Trace du {escape(trace['date'])}</h1>",
@@ -662,7 +680,7 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
                 f'<div class="detail">{line}</div>' for line in detail_lines
             )
             type_html = escape(display_type) + "".join(
-                f' <span class="label">{escape(label)}</span>'
+                f' <span class="label label-{escape(label)}">{escape(label)}</span>'
                 for label in terminal_labels
             )
             body.append(

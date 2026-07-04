@@ -386,7 +386,7 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     ) in markdown
 
     for label in ("test", "git", "pulse", "erreur"):
-        assert f'<span class="label">{label}</span>' in html
+        assert f'<span class="label label-{label}">{label}</span>' in html
     assert "<dt>Tests</dt><dd>3</dd>" in html
     assert "<dt>Git</dt><dd>1</dd>" in html
     assert "<dt>Erreurs</dt><dd>1</dd>" in html

@@ -21,6 +21,8 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
+    assert "--bg:#11151a" in html
+    assert "color-scheme:dark" in html
     assert "<h1>Trace du " in html
     assert "<h2>État système</h2>" in html
     assert "<dt>Daemon</dt><dd>running</dd>" in html
@@ -31,7 +33,7 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert "<dt>Watcher terminal</dt><dd>external;" in html
     assert "Session 1" in html
     assert "Command succeeded: <code>pytest &lt;tests_v2&gt;</code>" in html
-    assert '<span class="label">test</span>' in html
+    assert '<span class="label label-test">test</span>' in html
     assert 'href="/trace/today.md"' in html
 
 
