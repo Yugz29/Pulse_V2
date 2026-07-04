@@ -313,7 +313,7 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
-        "Apps principales : ChatGPT ×2, Terminal",
+        "Apps principales : ChatGPT, Terminal",
     ]
     for line in markdown_lines:
         assert line in markdown
@@ -330,7 +330,7 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
-        "<dt>Apps principales</dt><dd>ChatGPT ×2, Terminal</dd>",
+        "<dt>Apps principales</dt><dd>ChatGPT, Terminal</dd>",
     ]
     for row in html_rows:
         assert row in html

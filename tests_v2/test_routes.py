@@ -41,7 +41,19 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     app = create_app(tmp_path / "trace.db")
     client = app.test_client()
 
-    apps = ["CleanMyMac Menu", "ChatGPT", "Code", "ChatGPT", "Terminal"]
+    apps = [
+        "CleanMyMac Menu",
+        "Code",
+        "ChatGPT",
+        "Terminal",
+        "Safari",
+        "ChatGPT",
+        "Terminal",
+        "Safari",
+        "ChatGPT",
+        "Codex",
+        "Notes",
+    ]
     for app_name in apps:
         response = client.post(
             "/activities",
@@ -50,17 +62,27 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
         assert response.status_code == 201
 
     trace = client.get("/trace/today").get_json()
-    assert trace["activity_count"] == 5
+    assert trace["activity_count"] == 11
     assert [
         activity["details"]["app"]
         for activity in trace["sessions"][0]["activities"]
     ] == apps
 
-    expected = "Apps actives : ChatGPT ×2, Code, Terminal"
+    expected = "Apps actives : ChatGPT, Terminal, Safari, Code, Codex"
+    expected_summary = "Apps principales : ChatGPT, Terminal, Safari, Code, Codex"
     markdown = client.get("/trace/today.md").get_data(as_text=True)
     html = client.get("/").get_data(as_text=True)
     assert expected in markdown
     assert expected in html
+    assert expected_summary in markdown
+    assert (
+        "<dt>Apps principales</dt>"
+        "<dd>ChatGPT, Terminal, Safari, Code, Codex</dd>"
+    ) in html
+    app_lines = [line for line in markdown.splitlines() if "Apps " in line]
+    assert all("Notes" not in line for line in app_lines)
+    assert all("×" not in line for line in app_lines)
+    assert "×" not in html
     assert "CleanMyMac Menu" not in markdown
     assert "CleanMyMac Menu" not in html
     assert "- Dernière activité utile : Non détectée" in markdown

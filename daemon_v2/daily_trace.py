@@ -52,6 +52,10 @@ def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+def _ranked_apps(counts: dict[str, int], limit: int = 5) -> list[tuple[str, int]]:
+    return sorted(counts.items(), key=lambda item: -item[1])[:limit]
+
+
 def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
     displayed = []
     for session in trace["sessions"]:
@@ -317,10 +321,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
     displayed_sessions = _displayed_sessions(trace)
-    apps = [
-        f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
-        for app, count in summary["apps"].items()
-    ]
+    apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
     projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
     project_workspaces = set(summary["workspaces"])
     last_activity = (
@@ -428,8 +429,8 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                     continue
                 rendered_app_activations = True
                 apps = [
-                    f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
-                    for app, count in app_activation_counts.items()
+                    _markdown_text(app)
+                    for app, _count in _ranked_apps(app_activation_counts)
                 ]
                 lines.append(f"- Apps actives : {', '.join(apps)}")
                 continue
@@ -496,10 +497,7 @@ def render_daily_trace_html(
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
     displayed_sessions = _displayed_sessions(trace)
-    apps = [
-        f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
-        for app, count in summary["apps"].items()
-    ]
+    apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
         f'<span title="{escape(path)}">{escape(Path(path).name)}</span>'
         for path in summary["workspaces"]
@@ -680,8 +678,8 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
                     continue
                 rendered_app_activations = True
                 apps = [
-                    f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
-                    for app, count in app_activation_counts.items()
+                    escape(str(app))
+                    for app, _count in _ranked_apps(app_activation_counts)
                 ]
                 content = f"Apps actives : {', '.join(apps)}"
                 display_type = "applications"
