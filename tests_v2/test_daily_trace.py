@@ -495,6 +495,10 @@ def test_renders_deterministic_resume_before_today(tmp_path):
 
     assert markdown.index("## Maintenant") < markdown.index("## Reprise")
     assert markdown.index("## Reprise") < markdown.index("## Aujourd’hui")
+    assert (
+        "## Reprise\n- État : activité en cours, test non relancé"
+        in markdown
+    )
     assert "- Projet courant : Pulse\\_V2" in markdown
     assert (
         "- Dernière activité utile : file\\_changed — "
@@ -511,7 +515,8 @@ def test_renders_deterministic_resume_before_today(tmp_path):
     resume_html = html.split('<section class="resume"', 1)[1].split(
         "</section>", 1
     )[0]
-    assert resume_html.count("<li>") == 5
+    assert resume_html.count("<li>") == 6
+    assert "État : activité en cours, test non relancé" in resume_html
     assert html.index('id="maintenant"') < html.index('id="reprise"')
     assert html.index('id="reprise"') < html.index('id="aujourdhui"')
 
@@ -534,6 +539,7 @@ def test_resume_reports_latest_terminal_error(tmp_path):
     html = render_daily_trace_html(trace)
 
     assert "- Dernier test : pytest tests\\_v2 — Échec (1)" in markdown
+    assert "- État : tests échoués" in markdown
     assert "- Erreur terminal récente : pytest tests\\_v2 — code 1" in markdown
     assert "Erreur terminal récente : pytest tests_v2 — code 1" in html
 
@@ -552,7 +558,8 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
     )
     command = (
         ".venv/bin/python -m pytest tests_v2\n"
-        'git commit -m "validated changes"'
+        'git commit -m "validated changes"\n'
+        "git push"
     )
     store.append(
         Activity(
@@ -572,9 +579,11 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
         "- Dernier test : .venv/bin/python -m pytest tests\\_v2 — OK"
         in markdown
     )
+    assert "- État : tests OK, dernier commit poussé" in markdown
     assert 'Dernier test : git commit -m "validated changes"' not in markdown
     assert "Erreur terminal récente" not in markdown
     assert "Dernier test : .venv/bin/python -m pytest tests_v2 — OK" in html
+    assert "État : tests OK, dernier commit poussé" in html
     assert "Erreur terminal récente" not in html
 
 

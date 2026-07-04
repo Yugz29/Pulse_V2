@@ -482,10 +482,14 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     last_push_at = None
     last_error = None
     last_error_at = None
+    last_file_at = None
+    last_test_succeeded = None
     last_successful_test_at = None
 
     for session in trace["sessions"]:
         for activity in session["activities"]:
+            if activity["type"] == "file_changed":
+                last_file_at = activity["occurred_at"]
             if activity["type"] != "terminal_finished":
                 continue
             details = activity.get("details", {})
@@ -501,6 +505,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             if test_lines:
                 status = "OK" if exit_code == 0 else f"Échec ({exit_code})"
                 last_test = f"{test_lines[-1]} — {status}"
+                last_test_succeeded = exit_code == 0
                 if exit_code == 0:
                     last_successful_test_at = occurred_at
             for line in command_lines:
@@ -525,7 +530,37 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
                 last_error = f"{error_command} — code {exit_code}"
                 last_error_at = occurred_at
 
+    show_error = last_error and (
+        not last_successful_test_at
+        or (last_error_at is not None and last_error_at > last_successful_test_at)
+    )
+    commit_pushed = bool(
+        last_commit
+        and last_commit_at
+        and last_push_at
+        and last_push_at >= last_commit_at
+    )
+    state_parts = []
+    files_after_successful_test = bool(
+        last_file_at
+        and last_successful_test_at
+        and last_file_at > last_successful_test_at
+    )
+    if last_test_succeeded is False:
+        state_parts.append("tests échoués")
+    elif show_error:
+        state_parts.append("erreur récente")
+    elif files_after_successful_test:
+        state_parts.append("activité en cours, test non relancé")
+    else:
+        if last_test_succeeded:
+            state_parts.append("tests OK")
+        if commit_pushed:
+            state_parts.append("dernier commit poussé")
+
     facts = []
+    if state_parts:
+        facts.append(f"État : {', '.join(state_parts)}")
     if current["project"] != "Non détecté":
         facts.append(f"Projet courant : {current['project']}")
     if current["last_activity_type"]:
@@ -551,12 +586,8 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
         ):
             git_value = f"{last_commit} — push"
         facts.append(f"Dernier Git : {git_value}")
-    show_error = last_error and (
-        not last_successful_test_at
-        or (last_error_at is not None and last_error_at > last_successful_test_at)
-    )
     if show_error:
-        if len(facts) == 5:
+        if len(facts) >= 6:
             files_index = next(
                 (
                     index
@@ -568,7 +599,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             if files_index is not None:
                 facts.pop(files_index)
         facts.append(f"Erreur terminal récente : {last_error}")
-    return facts[:5]
+    return facts[:6]
 
 
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
