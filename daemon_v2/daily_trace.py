@@ -147,22 +147,115 @@ def _terminal_labels(activity: dict[str, Any]) -> list[str]:
     return [label for label in TERMINAL_LABEL_ORDER if label in labels]
 
 
-def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
-    workspace_counts: dict[str, int] = {}
-    app_counts: dict[str, int] = {}
-    terminal_count = 0
-    terminal_label_counts = {label: 0 for label in TERMINAL_LABEL_ORDER}
-    file_paths: set[str] = set()
-    last_activity: dict[str, Any] | None = None
+def _useful_activity_description(activity: dict[str, Any]) -> str:
+    details = activity.get("details", {})
+    if activity["type"] == "terminal_finished":
+        command_lines = [
+            line.strip()
+            for line in str(details.get("command", "")).splitlines()
+            if line.strip()
+        ]
+        return command_lines[-1] if command_lines else activity["summary"]
+    if activity["type"] == "file_changed":
+        event = details.get("event", details.get("change", "changed"))
+        path = details.get("path", "")
+        return (
+            f"{str(event).capitalize()} "
+            f"{_display_file_path(path, details.get('workspace'))}"
+        )
+    return activity["summary"]
 
-    for session in trace["sessions"]:
-        for activity in session["activities"]:
-            if activity["type"] != "app_activated":
-                last_activity = activity
+
+def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
+    displayed_sessions = _displayed_sessions(trace)
+    current_session = displayed_sessions[-1] if displayed_sessions else None
+    workspace_counts: dict[str, int] = {}
+    fallback_cwd = None
+    recent_files = []
+    seen_paths: set[str] = set()
+
+    if current_session:
+        for activity in current_session["activities"]:
             details = activity.get("details", {})
             workspace = details.get("workspace")
             if workspace:
                 workspace_counts[workspace] = workspace_counts.get(workspace, 0) + 1
+            if activity["type"] == "terminal_finished" and details.get("cwd"):
+                fallback_cwd = details["cwd"]
+        for activity in reversed(current_session["activities"]):
+            if activity["type"] != "file_changed":
+                continue
+            details = activity.get("details", {})
+            path = details.get("path")
+            if not path or path in seen_paths:
+                continue
+            seen_paths.add(path)
+            recent_files.append(
+                {
+                    "event": details.get("event", details.get("change", "changed")),
+                    "path": _display_file_path(path, details.get("workspace")),
+                }
+            )
+            if len(recent_files) == 5:
+                break
+
+    workspace = (
+        max(workspace_counts, key=workspace_counts.get)
+        if workspace_counts
+        else fallback_cwd
+    )
+    last_app = None
+    last_command = None
+    last_useful_activity = None
+    for session in trace["sessions"]:
+        for activity in session["activities"]:
+            details = activity.get("details", {})
+            if activity["type"] == "app_activated":
+                app = details.get("app")
+                if app and app not in IGNORED_APP_NAMES_FOR_RENDERING:
+                    last_app = app
+            else:
+                last_useful_activity = activity
+            if activity["type"] == "terminal_finished":
+                command_lines = [
+                    line.strip()
+                    for line in str(details.get("command", "")).splitlines()
+                    if line.strip()
+                ]
+                if command_lines:
+                    last_command = command_lines[-1]
+
+    return {
+        "project": Path(workspace).name if workspace else "Non détecté",
+        "workspace": workspace or "Non détecté",
+        "app": last_app or "Non détectée",
+        "command": last_command or "Non détectée",
+        "recent_files": recent_files,
+        "session_started_at": (
+            _display_time(current_session["started_at"])
+            if current_session
+            else "Non détectée"
+        ),
+        "last_activity_type": (
+            last_useful_activity["type"] if last_useful_activity else None
+        ),
+        "last_activity_description": (
+            _useful_activity_description(last_useful_activity)
+            if last_useful_activity
+            else None
+        ),
+    }
+
+
+def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
+    app_counts: dict[str, int] = {}
+    terminal_count = 0
+    terminal_label_counts = {label: 0 for label in TERMINAL_LABEL_ORDER}
+    file_paths: set[str] = set()
+
+    for session in trace["sessions"]:
+        for activity in session["activities"]:
+            details = activity.get("details", {})
             if activity["type"] == "terminal_finished":
                 terminal_count += 1
                 for label in _terminal_labels(activity):
@@ -174,34 +267,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
                 if app not in IGNORED_APP_NAMES_FOR_RENDERING:
                     app_counts[app] = app_counts.get(app, 0) + 1
 
-    workspace = (
-        max(workspace_counts, key=workspace_counts.get) if workspace_counts else None
-    )
-    last_description = None
-    last_type = None
-    if last_activity:
-        last_type = last_activity["type"]
-        details = last_activity.get("details", {})
-        if last_type == "terminal_finished":
-            command_lines = [
-                line.strip()
-                for line in str(details.get("command", "")).splitlines()
-                if line.strip()
-            ]
-            last_description = command_lines[-1] if command_lines else last_activity["summary"]
-        elif last_type == "file_changed":
-            event = details.get("event", details.get("change", "changed"))
-            path = details.get("path", "")
-            last_description = (
-                f"{str(event).capitalize()} "
-                f"{_display_file_path(path, details.get('workspace'))}"
-            )
-        else:
-            last_description = last_activity["summary"]
-
     return {
-        "project": Path(workspace).name if workspace else "Non détecté",
-        "workspace": workspace or "Non détecté",
         "session_count": len(_displayed_sessions(trace)),
         "activity_count": trace["activity_count"],
         "terminal_count": terminal_count,
@@ -211,30 +277,51 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
         "pulse_count": terminal_label_counts["pulse"],
         "distinct_file_count": len(file_paths),
         "apps": app_counts,
-        "last_activity_type": last_type,
-        "last_activity_description": last_description,
     }
 
 
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
+    current = build_current_state(trace)
     displayed_sessions = _displayed_sessions(trace)
     apps = [
         f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
         for app, count in summary["apps"].items()
     ]
     last_activity = (
-        f"{_markdown_text(summary['last_activity_type'])} — "
-        f"{_markdown_text(summary['last_activity_description'])}"
-        if summary["last_activity_type"]
+        f"{_markdown_text(current['last_activity_type'])} — "
+        f"{_markdown_text(current['last_activity_description'])}"
+        if current["last_activity_type"]
         else "Non détectée"
     )
     lines = [
         f"# Trace du {trace['date']}",
         "",
-        "## Résumé",
-        f"- Projet principal : {_markdown_text(summary['project'])}",
-        f"- Workspace : {_markdown_text(summary['workspace'])}",
+        "## Maintenant",
+        f"- Projet probable : {_markdown_text(current['project'])}",
+        f"- Workspace : {_markdown_text(current['workspace'])}",
+        f"- App active : {_markdown_text(current['app'])}",
+        (
+            f"- Dernière commande : {_markdown_inline_code(current['command'])}"
+            if current["command"] != "Non détectée"
+            else "- Dernière commande : Non détectée"
+        ),
+        "- Fichiers récents :",
+    ]
+    if current["recent_files"]:
+        lines.extend(
+            f"  - {str(item['event']).capitalize()} "
+            f"{_markdown_inline_code(item['path'])}"
+            for item in current["recent_files"]
+        )
+    else:
+        lines.append("  - Aucun")
+    lines.extend(
+        [
+        f"- Session active depuis : {current['session_started_at']}",
+        f"- Dernière activité utile : {last_activity}",
+        "",
+        "## Aujourd’hui",
         f"- Sessions : {summary['session_count']}",
         f"- Événements : {summary['activity_count']}",
         f"- Commandes terminal : {summary['terminal_count']}",
@@ -244,9 +331,9 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Commandes Pulse : {summary['pulse_count']}",
         f"- Fichiers modifiés : {summary['distinct_file_count']}",
         f"- Apps principales : {', '.join(apps) if apps else 'Aucune'}",
-        f"- Dernière activité utile : {last_activity}",
         "",
-    ]
+        ]
+    )
     if not displayed_sessions:
         lines.extend(["_Aucune activité._", ""])
         return "\n".join(lines)
@@ -354,16 +441,28 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
 
 def render_daily_trace_html(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
+    current = build_current_state(trace)
     displayed_sessions = _displayed_sessions(trace)
     apps = [
         f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
         for app, count in summary["apps"].items()
     ]
     last_activity = (
-        f"{escape(str(summary['last_activity_type']))} — "
-        f"{escape(str(summary['last_activity_description']))}"
-        if summary["last_activity_type"]
+        f"{escape(str(current['last_activity_type']))} — "
+        f"{escape(str(current['last_activity_description']))}"
+        if current["last_activity_type"]
         else "Non détectée"
+    )
+    recent_files = (
+        "<ul>"
+        + "".join(
+            f"<li>{escape(str(item['event']).capitalize())} "
+            f"<code>{escape(item['path'])}</code></li>"
+            for item in current["recent_files"]
+        )
+        + "</ul>"
+        if current["recent_files"]
+        else "Aucun"
     )
     body = [
         "<!doctype html>",
@@ -373,11 +472,12 @@ def render_daily_trace_html(trace: dict[str, Any]) -> str:
         """<style>
 body{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;
 background:#f6f7f9;color:#20242a}header{margin-bottom:2rem}h1{margin-bottom:.25rem}
-.meta,.detail{color:#626b76}.summary,.session{background:white;border:1px solid #dfe3e8;
+.meta,.detail{color:#626b76}.current,.summary,.session{background:white;border:1px solid #dfe3e8;
 border-radius:10px;padding:1rem 1.25rem;margin:1rem 0}.session h2{font-size:1.1rem;
-margin:0 0 1rem}.summary h2{margin-top:0}.summary dl{display:grid;
-grid-template-columns:12rem 1fr;gap:.35rem 1rem}.summary dt{font-weight:600}
-.summary dd{margin:0}.timeline{list-style:none;padding:0;margin:0}.event{display:grid;
+margin:0 0 1rem}.current h2,.summary h2{margin-top:0}.current dl,.summary dl{
+display:grid;grid-template-columns:12rem 1fr;gap:.35rem 1rem}.current dt,.summary dt{
+font-weight:600}.current dd,.summary dd{margin:0}.timeline{list-style:none;padding:0;
+margin:0}.event{display:grid;
 grid-template-columns:4rem 9rem 1fr;gap:.75rem;padding:.65rem 0;
 border-top:1px solid #edf0f2}.event:first-child{border-top:0}.type{font-family:monospace;
 font-size:.85rem;color:#46515d}.content code{background:#eef1f4;padding:.1rem .3rem;
@@ -393,9 +493,16 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
             f'{trace["session_count"]} session(s)</div>'
         ),
         "</header>",
-        '<section class="summary"><h2>Résumé</h2><dl>',
-        f"<dt>Projet principal</dt><dd>{escape(str(summary['project']))}</dd>",
-        f"<dt>Workspace</dt><dd>{escape(str(summary['workspace']))}</dd>",
+        '<section class="current"><h2>Maintenant</h2><dl>',
+        f"<dt>Projet probable</dt><dd>{escape(str(current['project']))}</dd>",
+        f"<dt>Workspace</dt><dd>{escape(str(current['workspace']))}</dd>",
+        f"<dt>App active</dt><dd>{escape(str(current['app']))}</dd>",
+        f"<dt>Dernière commande</dt><dd>{escape(str(current['command']))}</dd>",
+        f"<dt>Fichiers récents</dt><dd>{recent_files}</dd>",
+        f"<dt>Session active depuis</dt><dd>{current['session_started_at']}</dd>",
+        f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
+        "</dl></section>",
+        '<section class="summary"><h2>Aujourd’hui</h2><dl>',
         f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
@@ -405,7 +512,6 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
         f"<dt>Commandes Pulse</dt><dd>{summary['pulse_count']}</dd>",
         f"<dt>Fichiers modifiés</dt><dd>{summary['distinct_file_count']}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
-        f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
         "</dl></section>",
     ]
 

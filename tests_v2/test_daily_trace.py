@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 from daemon_v2.daily_trace import (
+    build_current_state,
     build_daily_trace,
     render_daily_trace_html,
     render_daily_trace_markdown,
@@ -54,8 +55,9 @@ def test_renders_empty_daily_trace():
     }
 
     markdown = render_daily_trace_markdown(trace)
-    assert "## Résumé" in markdown
-    assert "- Projet principal : Non détecté" in markdown
+    assert "## Maintenant" in markdown
+    assert "## Aujourd’hui" in markdown
+    assert "- Projet probable : Non détecté" in markdown
     assert "- Sessions : 0" in markdown
     assert "- Événements : 0" in markdown
     assert "- Dernière activité utile : Non détectée" in markdown
@@ -150,9 +152,10 @@ def test_does_not_coalesce_same_file_across_sessions(tmp_path):
 
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     markdown = render_daily_trace_markdown(trace)
+    timeline = markdown.split("## Session 1", 1)[1]
 
     assert trace["session_count"] == 2
-    assert markdown.count("Modified `a.py`") == 2
+    assert timeline.count("Modified `a.py`") == 2
     assert "×2" not in markdown
 
 
@@ -296,26 +299,36 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
     html = render_daily_trace_html(trace)
 
     markdown_lines = [
-        "Projet principal : Pulse",
+        "## Maintenant",
+        "Projet probable : Pulse",
         "Workspace : /project/Pulse",
+        "App active : Terminal",
+        "Dernière commande : `git push`",
+        "Session active depuis : 10:00",
+        "Dernière activité utile : terminal\\_finished — git push",
+        "## Aujourd’hui",
         "Sessions : 1",
         "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
         "Apps principales : ChatGPT ×2, Terminal",
-        "Dernière activité utile : terminal\\_finished — git push",
     ]
     for line in markdown_lines:
         assert line in markdown
     html_rows = [
-        "<dt>Projet principal</dt><dd>Pulse</dd>",
+        "<h2>Maintenant</h2>",
+        "<dt>Projet probable</dt><dd>Pulse</dd>",
         "<dt>Workspace</dt><dd>/project/Pulse</dd>",
+        "<dt>App active</dt><dd>Terminal</dd>",
+        "<dt>Dernière commande</dt><dd>git push</dd>",
+        "<dt>Session active depuis</dt><dd>10:00</dd>",
+        "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
+        "<h2>Aujourd’hui</h2>",
         "<dt>Sessions</dt><dd>1</dd>",
         "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
         "<dt>Apps principales</dt><dd>ChatGPT ×2, Terminal</dd>",
-        "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
     ]
     for row in html_rows:
         assert row in html
@@ -436,3 +449,34 @@ def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
     assert "Apps actives : ChatGPT" in html
     assert "Finder" not in html
     assert "loginwindow" not in html
+
+
+def test_current_state_limits_recent_files_to_five(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 14, 0, tzinfo=timezone.utc)
+    for index in range(6):
+        path = f"/project/file_{index}.py"
+        store.append(
+            Activity(
+                "file_changed",
+                first_at + timedelta(seconds=index),
+                "filesystem",
+                f"Modified {path}",
+                {
+                    "path": path,
+                    "event": "modified",
+                    "workspace": "/project",
+                },
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    current = build_current_state(trace)
+
+    assert [item["path"] for item in current["recent_files"]] == [
+        "file_5.py",
+        "file_4.py",
+        "file_3.py",
+        "file_2.py",
+        "file_1.py",
+    ]

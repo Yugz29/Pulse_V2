@@ -218,9 +218,10 @@ def test_repeated_file_changes_are_raw_in_json_and_coalesced_in_markdown(tmp_pat
     assert len(trace["sessions"][0]["activities"]) == 4
 
     markdown = client.get("/trace/today.md").get_data(as_text=True)
+    timeline = markdown.split("## Session 1", 1)[1]
     assert "Fichiers modifiés :" in markdown
-    assert markdown.count("Modified `a.py` ×3") == 1
-    assert markdown.count("Modified `b.py`") == 1
+    assert timeline.count("Modified `a.py` ×3") == 1
+    assert timeline.count("Modified `b.py`") == 1
     html = client.get("/").get_data(as_text=True)
     assert "Fichiers modifiés :" in html
     assert "Modified <code>a.py</code> ×3" in html
