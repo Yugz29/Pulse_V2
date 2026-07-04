@@ -34,6 +34,16 @@ Lancer ensemble le daemon, le watcher de fichiers et le watcher d’application 
 
 Le watcher de fichiers observe le dossier depuis lequel `scripts/dev.sh` est lancé. La page locale est disponible sur `http://127.0.0.1:5000/`. Appuyer sur `Ctrl-C` pour arrêter tous les processus.
 
+## Commandes utiles
+
+```bash
+make dev
+make test
+make status
+make reset
+make help
+```
+
 Pour lancer uniquement le daemon :
 
 ```bash
