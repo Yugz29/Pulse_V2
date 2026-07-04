@@ -1352,3 +1352,25 @@ def build_daily_trace(
         "session_count": len(merged_sessions),
         "sessions": merged_sessions,
     }
+
+
+def build_available_days(
+    store: TraceStore,
+    local_timezone: tzinfo | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    zone = local_timezone or datetime.now().astimezone().tzinfo or timezone.utc
+    days = []
+    for day in store.activity_dates(zone):
+        trace = build_daily_trace(store, day, zone)
+        summary = build_daily_summary(trace)
+        days.append(
+            {
+                "date": day.isoformat(),
+                "event_count": trace["activity_count"],
+                "session_count": summary["session_count"],
+                "projects": [
+                    Path(workspace).name for workspace in summary["workspaces"]
+                ],
+            }
+        )
+    return {"days": days}

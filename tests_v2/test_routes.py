@@ -1,6 +1,8 @@
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from daemon_v2.main import create_app
+from daemon_v2.models import Activity
 
 
 def test_home_route_renders_today_activity_as_html(tmp_path):
@@ -123,6 +125,69 @@ def test_today_markdown_route_returns_readable_markdown(tmp_path):
     assert response.status_code == 200
     assert response.mimetype == "text/markdown"
     assert response.get_data(as_text=True).startswith("# Trace du ")
+
+
+def test_trace_days_lists_available_days_newest_first(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    store = app.config["TRACE_STORE"]
+    newest_at = datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc)
+    activities = [
+        Activity(
+            "file_changed",
+            newest_at - timedelta(days=1),
+            "filesystem",
+            "Modified /project/Legacy/a.py",
+            {
+                "path": "/project/Legacy/a.py",
+                "event": "modified",
+                "workspace": "/project/Legacy",
+            },
+        ),
+        Activity(
+            "file_changed",
+            newest_at,
+            "filesystem",
+            "Modified /project/Pulse_V2/a.py",
+            {
+                "path": "/project/Pulse_V2/a.py",
+                "event": "modified",
+                "workspace": "/project/Pulse_V2",
+            },
+        ),
+        Activity(
+            "file_changed",
+            newest_at + timedelta(minutes=5),
+            "filesystem",
+            "Created /project/Pulse_Sandbox/b.py",
+            {
+                "path": "/project/Pulse_Sandbox/b.py",
+                "event": "created",
+                "workspace": "/project/Pulse_Sandbox",
+            },
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    response = app.test_client().get("/trace/days")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "days": [
+            {
+                "date": "2026-07-04",
+                "event_count": 2,
+                "session_count": 1,
+                "projects": ["Pulse_V2", "Pulse_Sandbox"],
+            },
+            {
+                "date": "2026-07-03",
+                "event_count": 1,
+                "session_count": 1,
+                "projects": ["Legacy"],
+            },
+        ]
+    }
 
 
 def test_status_reports_local_paths_and_today_activity(tmp_path):

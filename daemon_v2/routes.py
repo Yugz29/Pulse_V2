@@ -5,6 +5,7 @@ from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from .daily_trace import (
+    build_available_days,
     build_daily_summary,
     build_daily_trace,
     primary_workspace,
@@ -84,6 +85,11 @@ def post_activity():
 def get_today_trace():
     trace = build_daily_trace(current_app.config["TRACE_STORE"])
     return jsonify(trace)
+
+
+@api.get("/trace/days")
+def get_trace_days():
+    return jsonify(build_available_days(current_app.config["TRACE_STORE"]))
 
 
 @api.get("/trace/today.md")

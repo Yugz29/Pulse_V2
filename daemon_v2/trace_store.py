@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path
 
 from .models import Activity, Session, StoredActivity
@@ -107,6 +107,21 @@ class TraceStore:
                 (start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()),
             ).fetchall()
         return [self._row_to_stored_activity(row) for row in rows]
+
+    def activity_dates(self, local_timezone: tzinfo) -> list[date]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT occurred_at FROM activities"
+            ).fetchall()
+        return sorted(
+            {
+                datetime.fromisoformat(row["occurred_at"])
+                .astimezone(local_timezone)
+                .date()
+                for row in rows
+            },
+            reverse=True,
+        )
 
     @staticmethod
     def _row_to_stored_activity(row: sqlite3.Row) -> StoredActivity:
