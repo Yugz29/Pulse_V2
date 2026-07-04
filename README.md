@@ -44,6 +44,12 @@ make reset
 make help
 ```
 
+- `make dev` : lance Pulse localement ;
+- `make test` : lance les tests ;
+- `make status` : affiche l’état local ;
+- `make reset` : réinitialise la trace de développement ;
+- `make help` : affiche les commandes disponibles.
+
 Pour lancer uniquement le daemon :
 
 ```bash
@@ -58,7 +64,7 @@ Ouvrir la page locale de l’activité du jour :
 http://127.0.0.1:5000/
 ```
 
-La page affiche un résumé déterministe de la journée, les sessions, les commandes terminal, les changements de fichiers regroupés par vague de modification et les applications actives résumées par session.
+La page locale affiche les blocs `Maintenant`, `Aujourd’hui`, `État système` et la timeline détaillée. Elle utilise un thème sombre, regroupe les changements de fichiers par vague de modification et résume les applications actives par session.
 
 Vérifier l’état local sans démarrer de processus :
 
