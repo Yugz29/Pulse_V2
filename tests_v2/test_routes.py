@@ -59,6 +59,7 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert "Session 1" in html
     assert "Command succeeded: <code>pytest &lt;tests_v2&gt;</code>" in html
     assert '<span class="label label-test">test</span>' in html
+    assert 'href="/days">Jours</a>' in html
     assert 'href="/trace/today.md"' in html
 
 
@@ -188,6 +189,20 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
             },
         ]
     }
+
+    html_response = app.test_client().get("/days")
+    html = html_response.get_data(as_text=True)
+    assert html_response.status_code == 200
+    assert html_response.mimetype == "text/html"
+    assert "<h1>Jours récents</h1>" in html
+    assert html.index("<h2>2026-07-04</h2>") < html.index(
+        "<h2>2026-07-03</h2>"
+    )
+    assert "2 événements · 1 session" in html
+    assert "Projets : Pulse_V2, Pulse_Sandbox" in html
+    assert 'href="/trace/2026-07-04">JSON</a>' in html
+    assert 'href="/trace/2026-07-04.md">Markdown</a>' in html
+    assert "<script" not in html
 
 
 def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_path):

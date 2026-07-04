@@ -1282,7 +1282,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
     body.extend(
         [
             '<div id="timeline-live" aria-hidden="true"></div>',
-            '<footer><a href="/trace/today">JSON</a> · '
+            '<footer><a href="/days">Jours</a> · '
+            '<a href="/trace/today">JSON</a> · '
             '<a href="/trace/today.md">Markdown</a></footer>',
             "</main></div></body></html>",
         ]
@@ -1374,3 +1375,51 @@ def build_available_days(
             }
         )
     return {"days": days}
+
+
+def render_available_days_html(
+    available_days: dict[str, list[dict[str, Any]]],
+) -> str:
+    day_cards = []
+    for item in available_days["days"]:
+        day = escape(item["date"])
+        event_count = item["event_count"]
+        session_count = item["session_count"]
+        projects = ", ".join(escape(project) for project in item["projects"])
+        day_cards.append(
+            '<article class="day">'
+            f"<h2>{day}</h2>"
+            f"<p>{event_count} événement{'s' if event_count != 1 else ''} · "
+            f"{session_count} session{'s' if session_count != 1 else ''}</p>"
+            f"<p>Projets : {projects or 'Aucun'}</p>"
+            f'<nav><a href="/trace/{day}">JSON</a> · '
+            f'<a href="/trace/{day}.md">Markdown</a></nav>'
+            "</article>"
+        )
+    content = "".join(day_cards) or "<p>Aucun jour disponible.</p>"
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="fr"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            "<title>Pulse — Jours disponibles</title>",
+            """<style>
+:root{color-scheme:dark;--bg:#11151a;--panel:#191f26;--border:#2a333d;
+--text:#d7dee7;--muted:#8f9aaa;--link:#83a9d8}
+*{box-sizing:border-box}body{font:16px/1.6 system-ui,sans-serif;max-width:760px;
+margin:0 auto;padding:2.5rem 1.5rem 4rem;background:var(--bg);color:var(--text)}
+header{margin-bottom:1.5rem}h1{margin:0 0 .2rem;font-size:2rem}header p,.day p{
+color:var(--muted);margin:.2rem 0}.days{display:grid;gap:1rem}.day{background:var(--panel);
+border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem}
+.day h2{margin:0 0 .35rem;font-size:1.15rem;color:#e4eaf1}.day nav{margin-top:.65rem}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+footer{margin-top:2rem;color:var(--muted)}
+</style></head><body>""",
+            "<header><h1>Jours récents</h1>"
+            "<p>Traces disponibles du plus récent au plus ancien.</p></header>",
+            f'<main class="days">{content}</main>',
+            '<footer><a href="/">Aujourd’hui</a> · '
+            '<a href="/trace/days">JSON</a></footer>',
+            "</body></html>",
+        ]
+    )

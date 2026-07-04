@@ -11,6 +11,7 @@ from .daily_trace import (
     build_daily_summary,
     build_daily_trace,
     primary_workspace,
+    render_available_days_html,
     render_daily_trace_html,
     render_daily_trace_markdown,
 )
@@ -99,6 +100,15 @@ def get_today_trace():
 @api.get("/trace/days")
 def get_trace_days():
     return jsonify(build_available_days(current_app.config["TRACE_STORE"]))
+
+
+@api.get("/days")
+def get_days():
+    available_days = build_available_days(current_app.config["TRACE_STORE"])
+    return Response(
+        render_available_days_html(available_days),
+        mimetype="text/html",
+    )
 
 
 @api.get("/trace/<date_value>")
