@@ -29,6 +29,7 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
         in html
     )
     assert '<a class="nav-main" href="#maintenant">Maintenant</a>' in html
+    assert '<a class="nav-main" href="#reprise">Reprise</a>' in html
     assert (
         '<a class="nav-main nav-live nav-bottom" href="#timeline-live">Direct</a>'
         in html
@@ -37,6 +38,7 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert '<a class="nav-main" href="#etat-systeme">État système</a>' in html
     assert '<a class="nav-session" href="#session-1">Session 1</a>' in html
     assert '<section class="current" id="maintenant">' in html
+    assert '<section class="resume" id="reprise">' in html
     assert '<section class="summary" id="aujourdhui">' in html
     assert '<section class="system" id="etat-systeme">' in html
     assert '<section class="session" id="session-1">' in html

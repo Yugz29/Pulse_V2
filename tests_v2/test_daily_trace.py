@@ -440,6 +440,144 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
     assert "Session 1" in html
 
 
+def test_renders_deterministic_resume_before_today(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    workspace = "/project/Pulse_V2"
+    activities = [
+        Activity(
+            "terminal_finished",
+            first_at,
+            "terminal",
+            "Command succeeded: .venv/bin/python -m pytest tests_v2",
+            {
+                "command": ".venv/bin/python -m pytest tests_v2",
+                "exit_code": 0,
+                "cwd": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=1),
+            "terminal",
+            'Command succeeded: git commit -m "add resume block"',
+            {
+                "command": 'git commit -m "add resume block"',
+                "exit_code": 0,
+                "cwd": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=2),
+            "terminal",
+            "Command succeeded: git push",
+            {"command": "git push", "exit_code": 0, "cwd": workspace},
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=3),
+            "filesystem",
+            f"Modified {workspace}/daemon_v2/daily_trace.py",
+            {
+                "path": f"{workspace}/daemon_v2/daily_trace.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert markdown.index("## Maintenant") < markdown.index("## Reprise")
+    assert markdown.index("## Reprise") < markdown.index("## Aujourd’hui")
+    assert "- Projet courant : Pulse\\_V2" in markdown
+    assert (
+        "- Dernière activité utile : file\\_changed — "
+        "Modified daemon\\_v2/daily\\_trace.py"
+    ) in markdown
+    assert "- Derniers fichiers : daemon\\_v2/daily\\_trace.py" in markdown
+    assert (
+        "- Dernier test : .venv/bin/python -m pytest tests\\_v2 — OK"
+        in markdown
+    )
+    assert "- Dernier Git : add resume block — push" in markdown
+    assert '<a class="nav-main" href="#reprise">Reprise</a>' in html
+    assert '<section class="resume" id="reprise"><h2>Reprise</h2>' in html
+    resume_html = html.split('<section class="resume"', 1)[1].split(
+        "</section>", 1
+    )[0]
+    assert resume_html.count("<li>") == 5
+    assert html.index('id="maintenant"') < html.index('id="reprise"')
+    assert html.index('id="reprise"') < html.index('id="aujourdhui"')
+
+
+def test_resume_reports_latest_terminal_error(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    occurred_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    store.append(
+        Activity(
+            "terminal_finished",
+            occurred_at,
+            "terminal",
+            "Command failed (1): pytest tests_v2",
+            {"command": "pytest tests_v2", "exit_code": 1, "cwd": "/project"},
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert "- Dernier test : pytest tests\\_v2 — Échec (1)" in markdown
+    assert "- Erreur terminal récente : pytest tests\\_v2 — code 1" in markdown
+    assert "Erreur terminal récente : pytest tests_v2 — code 1" in html
+
+
+def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    store.append(
+        Activity(
+            "terminal_finished",
+            first_at,
+            "terminal",
+            "Command failed (2): make test",
+            {"command": "make test", "exit_code": 2, "cwd": "/project"},
+        )
+    )
+    command = (
+        ".venv/bin/python -m pytest tests_v2\n"
+        'git commit -m "validated changes"'
+    )
+    store.append(
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=5),
+            "terminal",
+            f"Command succeeded: {command}",
+            {"command": command, "exit_code": 0, "cwd": "/project"},
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert (
+        "- Dernier test : .venv/bin/python -m pytest tests\\_v2 — OK"
+        in markdown
+    )
+    assert 'Dernier test : git commit -m "validated changes"' not in markdown
+    assert "Erreur terminal récente" not in markdown
+    assert "Dernier test : .venv/bin/python -m pytest tests_v2 — OK" in html
+    assert "Erreur terminal récente" not in html
+
+
 def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     first_at = datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc)

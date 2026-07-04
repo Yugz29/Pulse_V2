@@ -328,6 +328,20 @@ def _file_change_groups(
     return groups
 
 
+def _is_test_command(line: str) -> bool:
+    normalized = " ".join(line.split())
+    parts = normalized.split()
+    python_pytest = (
+        len(parts) >= 3
+        and Path(parts[0]).name in {"python", "python3"}
+        and parts[1:3] == ["-m", "pytest"]
+    )
+    return python_pytest or any(
+        normalized == prefix or normalized.startswith(f"{prefix} ")
+        for prefix in ("make test", "pytest", "npm test", "swift test")
+    )
+
+
 def _terminal_labels(activity: dict[str, Any]) -> list[str]:
     details = activity.get("details", {})
     command = details.get("command")
@@ -338,16 +352,7 @@ def _terminal_labels(activity: dict[str, Any]) -> list[str]:
     )
     labels: set[str] = set()
     for line in command_lines:
-        parts = line.split()
-        python_pytest = (
-            len(parts) >= 3
-            and Path(parts[0]).name in {"python", "python3"}
-            and parts[1:3] == ["-m", "pytest"]
-        )
-        if python_pytest or any(
-            line == prefix or line.startswith(f"{prefix} ")
-            for prefix in ("pytest", "npm test", "swift test")
-        ):
+        if _is_test_command(line):
             labels.add("test")
         if any(
             line == prefix or line.startswith(f"{prefix} ")
@@ -469,6 +474,103 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_resume(trace: dict[str, Any]) -> list[str]:
+    current = build_current_state(trace)
+    last_test = None
+    last_commit = None
+    last_commit_at = None
+    last_push_at = None
+    last_error = None
+    last_error_at = None
+    last_successful_test_at = None
+
+    for session in trace["sessions"]:
+        for activity in session["activities"]:
+            if activity["type"] != "terminal_finished":
+                continue
+            details = activity.get("details", {})
+            command = details.get("command")
+            command_lines = (
+                [line.strip() for line in command.splitlines() if line.strip()]
+                if isinstance(command, str)
+                else []
+            )
+            occurred_at = activity["occurred_at"]
+            exit_code = details.get("exit_code")
+            test_lines = [line for line in command_lines if _is_test_command(line)]
+            if test_lines:
+                status = "OK" if exit_code == 0 else f"Échec ({exit_code})"
+                last_test = f"{test_lines[-1]} — {status}"
+                if exit_code == 0:
+                    last_successful_test_at = occurred_at
+            for line in command_lines:
+                try:
+                    parts = shlex.split(line)
+                except ValueError:
+                    parts = line.split()
+                if parts[:2] == ["git", "commit"]:
+                    last_commit = "commit"
+                    if "-m" in parts and parts.index("-m") + 1 < len(parts):
+                        last_commit = parts[parts.index("-m") + 1]
+                    last_commit_at = occurred_at
+                elif parts[:2] == ["git", "push"]:
+                    last_push_at = occurred_at
+            if (
+                isinstance(exit_code, int)
+                and not isinstance(exit_code, bool)
+                and exit_code != 0
+                and command_lines
+            ):
+                error_command = test_lines[-1] if test_lines else command_lines[-1]
+                last_error = f"{error_command} — code {exit_code}"
+                last_error_at = occurred_at
+
+    facts = []
+    if current["project"] != "Non détecté":
+        facts.append(f"Projet courant : {current['project']}")
+    if current["last_activity_type"]:
+        facts.append(
+            "Dernière activité utile : "
+            f"{current['last_activity_type']} — "
+            f"{current['last_activity_description']}"
+        )
+    if current["recent_files"]:
+        facts.append(
+            "Derniers fichiers : "
+            + ", ".join(item["path"] for item in current["recent_files"][:3])
+        )
+    if last_test:
+        facts.append(f"Dernier test : {last_test}")
+    if last_commit or last_push_at:
+        git_value = last_commit or "push"
+        if (
+            last_commit
+            and last_commit_at
+            and last_push_at
+            and last_push_at >= last_commit_at
+        ):
+            git_value = f"{last_commit} — push"
+        facts.append(f"Dernier Git : {git_value}")
+    show_error = last_error and (
+        not last_successful_test_at
+        or (last_error_at is not None and last_error_at > last_successful_test_at)
+    )
+    if show_error:
+        if len(facts) == 5:
+            files_index = next(
+                (
+                    index
+                    for index, fact in enumerate(facts)
+                    if fact.startswith("Derniers fichiers :")
+                ),
+                None,
+            )
+            if files_index is not None:
+                facts.pop(files_index)
+        facts.append(f"Erreur terminal récente : {last_error}")
+    return facts[:5]
+
+
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     app_counts: dict[str, int] = {}
     workspace_order: list[str] = []
@@ -535,6 +637,7 @@ def primary_workspace(trace: dict[str, Any]) -> str | None:
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
+    resume = build_resume(trace)
     displayed_sessions = _displayed_sessions(trace)
     apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
     projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
@@ -572,6 +675,16 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Session active depuis : {current['session_started_at']}",
         f"- Dernière activité utile : {last_activity}",
         "",
+        ]
+    )
+    if resume:
+        lines.extend(
+            ["## Reprise"]
+            + [f"- {_markdown_text(fact)}" for fact in resume]
+            + [""]
+        )
+    lines.extend(
+        [
         "## Aujourd’hui",
         f"- Sessions : {summary['session_count']}",
         f"- Événements : {summary['activity_count']}",
@@ -726,6 +839,7 @@ def render_daily_trace_html(
 ) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
+    resume = build_resume(trace)
     displayed_sessions = _displayed_sessions(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
@@ -752,8 +866,10 @@ def render_daily_trace_html(
     )
     navigation = [
         '<a class="nav-main" href="#maintenant">Maintenant</a>',
-        '<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>',
     ]
+    if resume:
+        navigation.append('<a class="nav-main" href="#reprise">Reprise</a>')
+    navigation.append('<a class="nav-main" href="#aujourdhui">Aujourd’hui</a>')
     if system_status:
         navigation.append(
             '<a class="nav-main" href="#etat-systeme">État système</a>'
@@ -794,12 +910,14 @@ padding:.22rem .4rem;border-radius:5px;color:#aebdcb;font-size:.84rem}
 .nav-project{padding-left:1.15rem!important;color:#829bb6!important;font-size:.78rem!important}
 header{margin-bottom:2rem}h1{font-size:2rem;letter-spacing:-.025em;margin:0 0 .25rem}
 h2{color:#e4eaf1;letter-spacing:-.01em}.meta,.detail{color:var(--muted)}
-.current,.summary,.system,.session{background:var(--panel);border:1px solid var(--border);
+.current,.resume,.summary,.system,.session{background:var(--panel);border:1px solid var(--border);
 border-radius:12px;padding:1.25rem 1.5rem;margin:1.25rem 0;box-shadow:0 8px 24px #0003}
-.current{border-top:3px solid #5d8fc4}.summary{border-top:3px solid #669b78}
+.current{border-top:3px solid #5d8fc4}.resume{border-top:3px solid #8d78b5}
+.summary{border-top:3px solid #669b78}
 .system{border-top:3px solid #778493;background:var(--panel-soft)}
 .session{margin-top:1.5rem}.session h2{font-size:1.1rem;margin:0 0 1rem;color:#cbd5e1}
-.current h2,.summary h2,.system h2{font-size:1.2rem;margin:0 0 1rem}
+.current h2,.resume h2,.summary h2,.system h2{font-size:1.2rem;margin:0 0 1rem}
+.resume ul{margin:0;padding-left:1.2rem}.resume li{margin:.25rem 0}
 .current dl,.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;
 gap:.5rem 1.25rem;margin:0}.current dt,.summary dt,.system dt{font-weight:600;
 color:#aeb9c6}.current dd,.summary dd,.system dd{margin:0;min-width:0;
@@ -834,7 +952,7 @@ font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration
 .current dl,.summary dl,
 .system dl{grid-template-columns:1fr;gap:.1rem}.current dd,.summary dd,.system dd{
 margin-bottom:.55rem}.event{grid-template-columns:3.25rem 1fr;gap:.65rem}.content{
-grid-column:2}.current,.summary,.system,.session{padding:1rem}}
+grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
 </style></head><body>""",
         '<div class="page-shell">',
         '<nav class="sidebar" aria-label="Navigation de la timeline">',
@@ -858,6 +976,15 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         f"<dt>Session active depuis</dt><dd>{current['session_started_at']}</dd>",
         f"<dt>Dernière activité utile</dt><dd>{last_activity}</dd>",
         "</dl></section>",
+    ]
+    if resume:
+        resume_items = "".join(f"<li>{escape(fact)}</li>" for fact in resume)
+        body.append(
+            '<section class="resume" id="reprise"><h2>Reprise</h2>'
+            f"<ul>{resume_items}</ul></section>"
+        )
+    body.extend(
+        [
         '<section class="summary" id="aujourdhui"><h2>Aujourd’hui</h2><dl>',
         f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
@@ -870,7 +997,8 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
         f"<dt>Projets</dt><dd>{', '.join(projects) if projects else 'Aucun'}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
         "</dl></section>",
-    ]
+        ]
+    )
 
     if system_status:
         database_exists = "oui" if system_status["database_exists"] else "non"
