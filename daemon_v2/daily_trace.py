@@ -449,7 +449,10 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_daily_trace_html(trace: dict[str, Any]) -> str:
+def render_daily_trace_html(
+    trace: dict[str, Any],
+    system_status: dict[str, Any] | None = None,
+) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)
     displayed_sessions = _displayed_sessions(trace)
@@ -482,11 +485,12 @@ def render_daily_trace_html(trace: dict[str, Any]) -> str:
         """<style>
 body{font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;
 background:#f6f7f9;color:#20242a}header{margin-bottom:2rem}h1{margin-bottom:.25rem}
-.meta,.detail{color:#626b76}.current,.summary,.session{background:white;border:1px solid #dfe3e8;
+.meta,.detail{color:#626b76}.current,.summary,.system,.session{background:white;border:1px solid #dfe3e8;
 border-radius:10px;padding:1rem 1.25rem;margin:1rem 0}.session h2{font-size:1.1rem;
-margin:0 0 1rem}.current h2,.summary h2{margin-top:0}.current dl,.summary dl{
-display:grid;grid-template-columns:12rem 1fr;gap:.35rem 1rem}.current dt,.summary dt{
-font-weight:600}.current dd,.summary dd{margin:0}.timeline{list-style:none;padding:0;
+margin:0 0 1rem}.current h2,.summary h2,.system h2{margin-top:0}.current dl,
+.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;gap:.35rem 1rem}
+.current dt,.summary dt,.system dt{font-weight:600}.current dd,.summary dd,.system dd{
+margin:0}.timeline{list-style:none;padding:0;
 margin:0}.event{display:grid;
 grid-template-columns:4rem 9rem 1fr;gap:.75rem;padding:.65rem 0;
 border-top:1px solid #edf0f2}.event:first-child{border-top:0}.type{font-family:monospace;
@@ -524,6 +528,37 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",
         "</dl></section>",
     ]
+
+    if system_status:
+        database_exists = "oui" if system_status["database_exists"] else "non"
+        workspace = system_status["primary_workspace"] or "Non détecté"
+        body.extend(
+            [
+                '<section class="system"><h2>État système</h2><dl>',
+                f"<dt>Daemon</dt><dd>{escape(system_status['daemon'])}</dd>",
+                (
+                    "<dt>URL locale</dt><dd>"
+                    f"<a href=\"{escape(system_status['url'])}\">"
+                    f"{escape(system_status['url'])}</a></dd>"
+                ),
+                (
+                    "<dt>Base SQLite</dt><dd>"
+                    f"{escape(system_status['database_path'])}</dd>"
+                ),
+                f"<dt>Base existante</dt><dd>{database_exists}</dd>",
+                f"<dt>Événements du jour</dt><dd>{system_status['event_count']}</dd>",
+                (
+                    "<dt>Sessions affichées</dt><dd>"
+                    f"{system_status['displayed_session_count']}</dd>"
+                ),
+                f"<dt>Workspace principal</dt><dd>{escape(workspace)}</dd>",
+                (
+                    "<dt>Watcher terminal</dt><dd>"
+                    f"{escape(system_status['terminal_watcher'])}</dd>"
+                ),
+                "</dl></section>",
+            ]
+        )
 
     if not displayed_sessions:
         body.append("<p>Aucune activité aujourd’hui.</p>")

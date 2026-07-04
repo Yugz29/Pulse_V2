@@ -22,6 +22,13 @@ def test_home_route_renders_today_activity_as_html(tmp_path):
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     assert "<h1>Trace du " in html
+    assert "<h2>État système</h2>" in html
+    assert "<dt>Daemon</dt><dd>running</dd>" in html
+    assert f"<dt>Base SQLite</dt><dd>{tmp_path / 'trace.db'}</dd>" in html
+    assert "<dt>Base existante</dt><dd>oui</dd>" in html
+    assert "<dt>Événements du jour</dt><dd>1</dd>" in html
+    assert "<dt>Sessions affichées</dt><dd>1</dd>" in html
+    assert "<dt>Watcher terminal</dt><dd>external;" in html
     assert "Session 1" in html
     assert "Command succeeded: <code>pytest &lt;tests_v2&gt;</code>" in html
     assert '<span class="label">test</span>' in html

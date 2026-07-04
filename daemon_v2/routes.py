@@ -17,15 +17,7 @@ from .ingest import IgnoredActivity, InvalidActivity, normalize_activity
 api = Blueprint("pulse", __name__)
 
 
-@api.get("/")
-def get_home():
-    trace = build_daily_trace(current_app.config["TRACE_STORE"])
-    return Response(render_daily_trace_html(trace), mimetype="text/html")
-
-
-@api.get("/status")
-def get_status():
-    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+def _build_status(trace):
     summary = build_daily_summary(trace)
     last_event = None
     if trace["sessions"]:
@@ -36,20 +28,33 @@ def get_status():
             "summary": activity["summary"],
         }
     database_path = Path(current_app.config["DATABASE_PATH"])
-    return jsonify(
-        {
-            "daemon": "running",
-            "url": "http://127.0.0.1:5000/",
-            "database_path": str(database_path),
-            "database_exists": database_path.exists(),
-            "date": trace["date"],
-            "event_count": trace["activity_count"],
-            "displayed_session_count": summary["session_count"],
-            "last_event": last_event,
-            "primary_workspace": primary_workspace(trace),
-            "terminal_watcher": "external; source the Zsh script separately",
-        }
+    return {
+        "daemon": "running",
+        "url": "http://127.0.0.1:5000/",
+        "database_path": str(database_path),
+        "database_exists": database_path.exists(),
+        "date": trace["date"],
+        "event_count": trace["activity_count"],
+        "displayed_session_count": summary["session_count"],
+        "last_event": last_event,
+        "primary_workspace": primary_workspace(trace),
+        "terminal_watcher": "external; source the Zsh script separately",
+    }
+
+
+@api.get("/")
+def get_home():
+    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+    return Response(
+        render_daily_trace_html(trace, system_status=_build_status(trace)),
+        mimetype="text/html",
     )
+
+
+@api.get("/status")
+def get_status():
+    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+    return jsonify(_build_status(trace))
 
 
 @api.post("/activities")
