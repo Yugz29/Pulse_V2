@@ -190,6 +190,70 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     }
 
 
+def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    store = app.config["TRACE_STORE"]
+    activities = [
+        Activity(
+            "file_changed",
+            datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc),
+            "filesystem",
+            "Modified /project/day3.py",
+            {
+                "path": "/project/day3.py",
+                "event": "modified",
+                "workspace": "/project",
+            },
+        ),
+        Activity(
+            "file_changed",
+            datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc),
+            "filesystem",
+            "Modified /project/day4.py",
+            {
+                "path": "/project/day4.py",
+                "event": "modified",
+                "workspace": "/project",
+            },
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+    client = app.test_client()
+
+    response = client.get("/trace/2026-07-04")
+    trace = response.get_json()
+    assert response.status_code == 200
+    assert trace["date"] == "2026-07-04"
+    assert trace["activity_count"] == 1
+    assert trace["sessions"][0]["activities"][0]["details"]["path"].endswith(
+        "day4.py"
+    )
+
+    markdown_response = client.get("/trace/2026-07-04.md")
+    markdown = markdown_response.get_data(as_text=True)
+    assert markdown_response.status_code == 200
+    assert markdown_response.mimetype == "text/markdown"
+    assert markdown.startswith("# Trace du 2026-07-04")
+    assert "day4.py" in markdown
+    assert "day3.py" not in markdown
+
+    empty_trace = client.get("/trace/2026-07-02").get_json()
+    assert empty_trace["date"] == "2026-07-02"
+    assert empty_trace["activity_count"] == 0
+    assert empty_trace["sessions"] == []
+    assert "_Aucune activité._" in client.get(
+        "/trace/2026-07-02.md"
+    ).get_data(as_text=True)
+
+    for path in ("/trace/not-a-date", "/trace/2026-02-30.md"):
+        invalid_response = client.get(path)
+        assert invalid_response.status_code == 400
+        assert invalid_response.get_json() == {
+            "error": "invalid date; expected YYYY-MM-DD"
+        }
+
+
 def test_status_reports_local_paths_and_today_activity(tmp_path):
     database_path = tmp_path / "trace.db"
     app = create_app(database_path)

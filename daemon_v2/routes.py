@@ -1,6 +1,8 @@
 """HTTP routes for activity ingestion and daily trace retrieval."""
 
+from datetime import date
 from pathlib import Path
+import re
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
@@ -16,6 +18,13 @@ from .ingest import IgnoredActivity, InvalidActivity, normalize_activity
 
 
 api = Blueprint("pulse", __name__)
+TRACE_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_trace_date(value: str) -> date:
+    if not TRACE_DATE_PATTERN.fullmatch(value):
+        raise ValueError
+    return date.fromisoformat(value)
 
 
 def _build_status(trace):
@@ -90,6 +99,33 @@ def get_today_trace():
 @api.get("/trace/days")
 def get_trace_days():
     return jsonify(build_available_days(current_app.config["TRACE_STORE"]))
+
+
+@api.get("/trace/<date_value>")
+def get_dated_trace(date_value):
+    try:
+        selected_date = _parse_trace_date(date_value)
+    except ValueError:
+        return jsonify({"error": "invalid date; expected YYYY-MM-DD"}), 400
+    return jsonify(
+        build_daily_trace(
+            current_app.config["TRACE_STORE"],
+            day=selected_date,
+        )
+    )
+
+
+@api.get("/trace/<date_value>.md")
+def get_dated_trace_markdown(date_value):
+    try:
+        selected_date = _parse_trace_date(date_value)
+    except ValueError:
+        return jsonify({"error": "invalid date; expected YYYY-MM-DD"}), 400
+    trace = build_daily_trace(
+        current_app.config["TRACE_STORE"],
+        day=selected_date,
+    )
+    return Response(render_daily_trace_markdown(trace), mimetype="text/markdown")
 
 
 @api.get("/trace/today.md")
