@@ -33,16 +33,14 @@ def test_builds_structured_daily_trace(tmp_path):
         "terminal_finished",
     ]
 
+    markdown = render_daily_trace_markdown(trace)
+    assert "## Session 1 — 08:00–08:05" in markdown
+    assert "### Résumé de session\n- Tests passés : pytest" in markdown
+    assert "- 08:00 · **file\\_changed** — Modified a.py" in markdown
     assert (
-        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-6:]) + "\n").lstrip()
-        == (
-        "## Session 1 — 08:00–08:05\n"
-        "\n"
-        "- 08:00 · **file\\_changed** — Modified a.py\n"
         "- 08:05 · **terminal\\_finished** `test` — Command succeeded: `pytest`\n"
-        "  - CWD : /project\n"
-        )
-    )
+        "  - CWD : /project"
+    ) in markdown
 
 
 def test_renders_empty_daily_trace():
@@ -85,18 +83,19 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["sessions"][0]["activities"][0]["details"]["command"] == command
+    markdown = render_daily_trace_markdown(trace)
+    assert "## Session 1 — 21:06–21:06" in markdown
     assert (
-        ("\n".join(render_daily_trace_markdown(trace).splitlines()[-8:]) + "\n").lstrip()
-        == (
-        "## Session 1 — 21:06–21:06\n"
-        "\n"
+        "### Résumé de session\n"
+        "- Git : commit — filter multiline terminal noise ; push"
+    ) in markdown
+    assert (
         "- 21:06 · **terminal\\_finished** `git` — Command succeeded:\n"
         "  - `git add .`\n"
         '  - `git commit -m "filter multiline terminal noise"`\n'
         "  - `git push`\n"
-        "  - CWD : /project/Pulse\\_V2\n"
-        )
-    )
+        "  - CWD : /project/Pulse\\_V2"
+    ) in markdown
 
 
 def test_renders_file_path_relative_to_workspace(tmp_path):
@@ -121,16 +120,24 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["sessions"][0]["activities"][0]["details"]["path"] == absolute_path
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    assert "## Session 1 — 21:20–21:20" in markdown
     assert (
-        (
-            "## Session 1 — 21:20–21:20\n"
-            "\n"
-            "### Pulse\\_V2\n"
-            "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
-            "  - Workspace : /Users/yugz/Projets/Pulse\\_V2\n"
-        )
-        in render_daily_trace_markdown(trace)
-    )
+        "### Résumé de session\n"
+        "#### Pulse\\_V2\n"
+        "- Fichiers modifiés : daemon\\_v2/daily\\_trace.py"
+    ) in markdown
+    assert "- Projet : Pulse\\_V2" not in markdown
+    assert (
+        '<div class="session-project-summary"><h4>Pulse_V2</h4>'
+        "<ul><li>Fichiers modifiés : daemon_v2/daily_trace.py</li></ul>"
+    ) in html
+    assert (
+        "### Pulse\\_V2\n"
+        "- 21:20 · **file\\_changed** — Modified `daemon_v2/daily_trace.py`\n"
+        "  - Workspace : /Users/yugz/Projets/Pulse\\_V2"
+    ) in markdown
 
 
 def test_does_not_coalesce_same_file_across_sessions(tmp_path):
@@ -183,17 +190,15 @@ def test_groups_distinct_file_changes_from_the_same_minute(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
 
     assert trace["activity_count"] == 3
+    markdown = render_daily_trace_markdown(trace)
+    assert "## Session 1 — 23:17–23:18" in markdown
+    assert "### Résumé de session" in markdown
     assert (
-        (
-            "## Session 1 — 23:17–23:18\n"
-            "\n"
-            "### project\n"
-            "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
-            "  - Created `a.py` ×2\n"
-            "  - Modified `b.py`\n"
-        )
-        in render_daily_trace_markdown(trace)
-    )
+        "### project\n"
+        "- 23:17 · **file\\_changed** — Fichiers modifiés :\n"
+        "  - Created `a.py` ×2\n"
+        "  - Modified `b.py`"
+    ) in markdown
 
 
 def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
@@ -221,10 +226,13 @@ def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
 
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
 
     assert trace["session_count"] == 2
     assert markdown.count("Apps actives : ChatGPT") == 2
     assert markdown.count("- Apps actives : ChatGPT\n") == 2
+    assert "Résumé de session" not in markdown
+    assert "Résumé de session" not in html
 
 
 def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
@@ -606,13 +614,114 @@ def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     timeline = markdown.split("## Session 1", 1)[1]
+    timeline_lines = timeline.splitlines()
 
     assert trace["session_count"] == 1
-    assert timeline.count("### Pulse\\_V2") == 2
-    assert timeline.count("### Pulse\\_Sandbox") == 1
-    assert "### TEST" not in timeline
+    assert timeline_lines.count("### Pulse\\_V2") == 2
+    assert timeline_lines.count("### Pulse\\_Sandbox") == 1
+    assert "### TEST" not in timeline_lines
     assert f"  - CWD : {weak_parent}" in timeline
     assert html.count('class="project-separator">Pulse_V2</li>') == 2
     assert html.count('class="project-separator">Pulse_Sandbox</li>') == 1
     assert 'class="project-separator">TEST</li>' not in html
     assert f"CWD : {weak_parent}" in html
+
+
+def test_session_summary_reports_projects_files_tests_and_git(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 11, 0, tzinfo=timezone.utc)
+    pulse_v2 = "/project/Pulse_V2"
+    sandbox = "/project/Pulse_Sandbox"
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Created {pulse_v2}/scripts/dev_reload.py",
+            {
+                "path": f"{pulse_v2}/scripts/dev_reload.py",
+                "event": "created",
+                "workspace": pulse_v2,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=1),
+            "terminal",
+            "Command succeeded: pytest tests_v2",
+            {"command": "pytest tests_v2", "exit_code": 0, "cwd": pulse_v2},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=2),
+            "terminal",
+            'Command succeeded: git commit -m "show project changes"',
+            {
+                "command": 'git commit -m "show project changes"',
+                "exit_code": 0,
+                "cwd": pulse_v2,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=3),
+            "terminal",
+            "Command succeeded: git push",
+            {"command": "git push", "exit_code": 0, "cwd": pulse_v2},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=3, seconds=30),
+            "terminal",
+            "Command succeeded: python -m pytest tests_v2/test_daily_trace.py",
+            {
+                "command": "python -m pytest tests_v2/test_daily_trace.py",
+                "exit_code": 0,
+                "cwd": "/project/TEST",
+            },
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=4),
+            "filesystem",
+            f"Created {sandbox}/src/calc.py",
+            {
+                "path": f"{sandbox}/src/calc.py",
+                "event": "created",
+                "workspace": sandbox,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=5),
+            "terminal",
+            "Command succeeded: git status",
+            {"command": "git status", "exit_code": 0, "cwd": pulse_v2},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert "### Résumé de session" in markdown
+    assert (
+        "#### Pulse\\_V2\n"
+        "- Fichiers créés : scripts/dev\\_reload.py\n"
+        "- Tests passés : pytest tests\\_v2, "
+        "python -m pytest tests\\_v2/test\\_daily\\_trace.py\n"
+        "- Git : commit — show project changes ; push"
+    ) in markdown
+    assert "#### Pulse\\_Sandbox\n- Fichiers créés : src/calc.py" in markdown
+    assert "#### TEST" not in markdown
+    assert '<div class="session-summary"><h3>Résumé de session</h3>' in html
+    assert '<div class="session-project-summary"><h4>Pulse_V2</h4>' in html
+    assert '<div class="session-project-summary"><h4>Pulse_Sandbox</h4>' in html
+    assert '<div class="session-project-summary"><h4>TEST</h4>' not in html
+    assert (
+        "Tests passés : pytest tests_v2, "
+        "python -m pytest tests_v2/test_daily_trace.py"
+    ) in html
+    assert "Git : commit — show project changes ; push" in html

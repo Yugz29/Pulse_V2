@@ -4,6 +4,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from html import escape
 from pathlib import Path
+import shlex
 from typing import Any
 
 from .trace_store import TraceStore
@@ -54,6 +55,148 @@ def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
 
 def _ranked_apps(counts: dict[str, int], limit: int = 5) -> list[tuple[str, int]]:
     return sorted(counts.items(), key=lambda item: -item[1])[:limit]
+
+
+def build_session_summary(
+    session: dict[str, Any],
+    project_workspaces: set[str],
+    *,
+    include_projects: bool = True,
+) -> list[str]:
+    project_sequence: list[str] = []
+    projects: list[str] = []
+    created_files: list[str] = []
+    modified_files: list[str] = []
+    deleted_files: list[str] = []
+    passed_tests: list[str] = []
+    failed_tests: list[str] = []
+    git_facts: list[str] = []
+    errors: list[str] = []
+
+    for activity in session["activities"]:
+        details = activity.get("details", {})
+        workspace = _activity_workspace(activity)
+        if workspace in project_workspaces:
+            project = Path(workspace).name
+            if not project_sequence or project_sequence[-1] != project:
+                project_sequence.append(project)
+            if project not in projects:
+                projects.append(project)
+
+        if activity["type"] == "file_changed":
+            path = details.get("path")
+            event = details.get("event", details.get("change"))
+            if path and event:
+                display_path = _display_file_path(path, details.get("workspace"))
+                target = {
+                    "created": created_files,
+                    "modified": modified_files,
+                    "deleted": deleted_files,
+                }.get(event)
+                if target is not None and display_path not in target:
+                    target.append(display_path)
+
+        if activity["type"] != "terminal_finished":
+            continue
+        command = details.get("command")
+        command_lines = (
+            [line.strip() for line in command.splitlines() if line.strip()]
+            if isinstance(command, str)
+            else []
+        )
+        labels = _terminal_labels(activity)
+        exit_code = details.get("exit_code")
+        if "test" in labels:
+            target = passed_tests if exit_code == 0 else failed_tests
+            for line in command_lines:
+                if line not in target:
+                    target.append(line)
+        for line in command_lines:
+            try:
+                parts = shlex.split(line)
+            except ValueError:
+                parts = line.split()
+            if parts[:2] == ["git", "commit"]:
+                fact = "commit"
+                if "-m" in parts and parts.index("-m") + 1 < len(parts):
+                    fact = f"commit — {parts[parts.index('-m') + 1]}"
+                if fact not in git_facts:
+                    git_facts.append(fact)
+            elif parts[:2] == ["git", "push"] and "push" not in git_facts:
+                git_facts.append("push")
+        if (
+            isinstance(exit_code, int)
+            and not isinstance(exit_code, bool)
+            and exit_code != 0
+        ):
+            for line in command_lines:
+                if line not in errors:
+                    errors.append(line)
+
+    facts = []
+    if include_projects and projects:
+        label = "Projet" if len(projects) == 1 else "Projets"
+        project_fact = f"{label} : {', '.join(projects)}"
+        if len(project_sequence) > 1:
+            project_fact += (
+                f" ; Changement de projet : {' → '.join(project_sequence)}"
+            )
+        facts.append(project_fact)
+
+    file_parts = []
+    if created_files:
+        file_parts.append(f"créés — {', '.join(created_files[:5])}")
+    if modified_files:
+        file_parts.append(f"modifiés — {', '.join(modified_files[:5])}")
+    if deleted_files:
+        file_parts.append(f"supprimés — {', '.join(deleted_files[:5])}")
+    if file_parts:
+        if len(file_parts) == 1:
+            name, values = file_parts[0].split(" — ", 1)
+            facts.append(f"Fichiers {name} : {values}")
+        else:
+            facts.append(f"Fichiers : {' ; '.join(file_parts)}")
+
+    test_parts = []
+    if passed_tests:
+        test_parts.append(f"Tests passés : {', '.join(passed_tests[:3])}")
+    if failed_tests:
+        test_parts.append(f"Tests échoués : {', '.join(failed_tests[:3])}")
+    if test_parts:
+        facts.append(" ; ".join(test_parts))
+    if git_facts:
+        facts.append(f"Git : {' ; '.join(git_facts[:3])}")
+    if errors:
+        facts.append(f"Erreurs terminal : {', '.join(errors[:3])}")
+    return facts[:5]
+
+
+def _session_project_summaries(
+    session: dict[str, Any],
+    project_workspaces: set[str],
+) -> list[tuple[str, list[str]]]:
+    grouped_activities: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+    active_workspace = None
+    for activity in session["activities"]:
+        workspace = _activity_workspace(activity)
+        if workspace in project_workspaces:
+            active_workspace = workspace
+            grouped_activities.setdefault(workspace, [])
+        if active_workspace:
+            grouped_activities[active_workspace].append(activity)
+
+    if not grouped_activities:
+        return []
+
+    summaries = []
+    for workspace, activities in grouped_activities.items():
+        facts = build_session_summary(
+            {"activities": activities},
+            {workspace},
+            include_projects=False,
+        )
+        summaries.append((Path(workspace).name, facts))
+    return summaries
 
 
 def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
@@ -379,6 +522,23 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         started_at = _display_time(session["started_at"])
         ended_at = _display_time(session["ended_at"])
         lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
+        project_summaries = _session_project_summaries(
+            session, project_workspaces
+        )
+        if project_summaries:
+            lines.append("### Résumé de session")
+            for project, facts in project_summaries:
+                lines.append(f"#### {_markdown_text(project)}")
+                lines.extend(f"- {_markdown_text(fact)}" for fact in facts)
+            lines.append("")
+        else:
+            session_facts = build_session_summary(session, project_workspaces)
+            if session_facts:
+                lines.extend(
+                    ["### Résumé de session"]
+                    + [f"- {_markdown_text(fact)}" for fact in session_facts]
+                    + [""]
+                )
 
         file_change_groups = _file_change_groups(session)
         rendered_file_paths: set[str] = set()
@@ -557,6 +717,12 @@ color:#b9a7ed}.label-pulse{background:#17333c;border-color:#285663;color:#86c9d8
 .project-separator{padding:1rem .25rem .45rem;color:#8fb4dd;font-weight:650;
 letter-spacing:.01em;border-top:1px solid var(--border)}.project-separator:first-child{
 border-top:0;padding-top:.25rem}
+.session-summary{margin:0 0 1rem;padding:.8rem 1rem;background:#151b21;
+border:1px solid #26313b;border-radius:8px}.session-summary h3{font-size:.9rem;
+color:#aebdcb;margin:0 0 .4rem}.session-summary ul{margin:0;padding-left:1.2rem;
+color:#b8c2cd}.session-summary li{margin:.18rem 0}
+.session-project-summary+.session-project-summary{margin-top:.7rem}
+.session-project-summary h4{margin:0 0 .3rem;color:#8fb4dd;font-size:.88rem}
 .detail{font-size:.88rem;margin-top:.4rem}footer{margin-top:2.5rem;color:var(--muted);
 font-size:.9rem}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 @media(max-width:700px){body{padding:1.5rem 1rem 3rem}.current dl,.summary dl,
@@ -631,13 +797,49 @@ grid-column:2}.current,.summary,.system,.session{padding:1rem}}
     for index, session in enumerate(displayed_sessions, start=1):
         started_at = _display_time(session["started_at"])
         ended_at = _display_time(session["ended_at"])
+        project_summaries = _session_project_summaries(
+            session, project_workspaces
+        )
+        session_facts = (
+            [] if project_summaries
+            else build_session_summary(session, project_workspaces)
+        )
         body.extend(
             [
                 '<section class="session">',
                 f"<h2>Session {index} · {started_at}–{ended_at}</h2>",
-                '<ul class="timeline">',
             ]
         )
+        if project_summaries or session_facts:
+            if project_summaries:
+                summary_html = "".join(
+                    '<div class="session-project-summary">'
+                    f"<h4>{escape(project)}</h4>"
+                    + (
+                        "<ul>"
+                        + "".join(
+                            f"<li>{escape(fact)}</li>" for fact in facts
+                        )
+                        + "</ul>"
+                        if facts
+                        else ""
+                    )
+                    + "</div>"
+                    for project, facts in project_summaries
+                )
+            else:
+                summary_html = (
+                    "<ul>"
+                    + "".join(
+                        f"<li>{escape(fact)}</li>" for fact in session_facts
+                    )
+                    + "</ul>"
+                )
+            body.append(
+                '<div class="session-summary"><h3>Résumé de session</h3>'
+                f"{summary_html}</div>"
+            )
+        body.append('<ul class="timeline">')
         file_change_groups = _file_change_groups(session)
         rendered_file_paths: set[str] = set()
         app_activation_counts = _app_activation_counts(session)
