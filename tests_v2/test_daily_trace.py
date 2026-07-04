@@ -369,3 +369,61 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     assert "<dt>Git</dt><dd>1</dd>" in html
     assert "<dt>Erreurs</dt><dd>1</dd>" in html
     assert "<dt>Commandes Pulse</dt><dd>1</dd>" in html
+
+
+def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc)
+    activities = [
+        Activity(
+            "app_activated",
+            first_at,
+            "application",
+            "Activated loginwindow",
+            {"app": "loginwindow"},
+        ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(hours=1),
+            "application",
+            "Activated Finder",
+            {"app": "Finder"},
+        ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(hours=1, minutes=1),
+            "application",
+            "Activated ChatGPT",
+            {"app": "ChatGPT"},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(hours=1, minutes=2),
+            "terminal",
+            "Command succeeded: git status",
+            {"command": "git status", "exit_code": 0, "cwd": "/project"},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert trace["session_count"] == 2
+    assert trace["activity_count"] == 4
+    assert [activity["details"]["app"] for activity in trace["sessions"][0]["activities"]] == [
+        "loginwindow"
+    ]
+    assert "- Sessions : 1" in markdown
+    assert markdown.count("## Session ") == 1
+    assert "Apps principales : ChatGPT" in markdown
+    assert "Apps actives : ChatGPT" in markdown
+    assert "Finder" not in markdown
+    assert "loginwindow" not in markdown
+    assert "<dt>Sessions</dt><dd>1</dd>" in html
+    assert html.count('<section class="session">') == 1
+    assert "Apps actives : ChatGPT" in html
+    assert "Finder" not in html
+    assert "loginwindow" not in html

@@ -9,7 +9,7 @@ from typing import Any
 from .trace_store import TraceStore
 
 
-IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu"}
+IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu", "Finder", "loginwindow"}
 TERMINAL_LABEL_ORDER = ("test", "git", "pulse", "erreur")
 
 
@@ -50,6 +50,22 @@ def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
             if app and app not in IGNORED_APP_NAMES_FOR_RENDERING:
                 counts[app] = counts.get(app, 0) + 1
     return counts
+
+
+def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    displayed = []
+    for session in trace["sessions"]:
+        if any(
+            activity["type"] in {"terminal_finished", "file_changed"}
+            or (
+                activity["type"] == "app_activated"
+                and activity.get("details", {}).get("app")
+                not in IGNORED_APP_NAMES_FOR_RENDERING
+            )
+            for activity in session["activities"]
+        ):
+            displayed.append(session)
+    return displayed
 
 
 def _file_change_groups(
@@ -180,7 +196,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     return {
         "project": Path(workspace).name if workspace else "Non détecté",
         "workspace": workspace or "Non détecté",
-        "session_count": trace["session_count"],
+        "session_count": len(_displayed_sessions(trace)),
         "activity_count": trace["activity_count"],
         "terminal_count": terminal_count,
         "test_count": terminal_label_counts["test"],
@@ -196,6 +212,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
 
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
+    displayed_sessions = _displayed_sessions(trace)
     apps = [
         f"{_markdown_text(app)} ×{count}" if count > 1 else _markdown_text(app)
         for app, count in summary["apps"].items()
@@ -224,11 +241,11 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Dernière activité utile : {last_activity}",
         "",
     ]
-    if not trace["sessions"]:
+    if not displayed_sessions:
         lines.extend(["_Aucune activité._", ""])
         return "\n".join(lines)
 
-    for index, session in enumerate(trace["sessions"], start=1):
+    for index, session in enumerate(displayed_sessions, start=1):
         started_at = _display_time(session["started_at"])
         ended_at = _display_time(session["ended_at"])
         lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
@@ -331,6 +348,7 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
 
 def render_daily_trace_html(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
+    displayed_sessions = _displayed_sessions(trace)
     apps = [
         f"{escape(str(app))} ×{count}" if count > 1 else escape(str(app))
         for app, count in summary["apps"].items()
@@ -385,10 +403,10 @@ margin-top:.3rem}footer{margin-top:2rem}a{color:#315fa8}
         "</dl></section>",
     ]
 
-    if not trace["sessions"]:
+    if not displayed_sessions:
         body.append("<p>Aucune activité aujourd’hui.</p>")
 
-    for index, session in enumerate(trace["sessions"], start=1):
+    for index, session in enumerate(displayed_sessions, start=1):
         started_at = _display_time(session["started_at"])
         ended_at = _display_time(session["ended_at"])
         body.extend(
