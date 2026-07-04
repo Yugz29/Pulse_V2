@@ -71,6 +71,35 @@ def test_today_markdown_route_returns_readable_markdown(tmp_path):
     assert response.get_data(as_text=True).startswith("# Trace du ")
 
 
+def test_status_reports_local_paths_and_today_activity(tmp_path):
+    database_path = tmp_path / "trace.db"
+    app = create_app(database_path)
+    client = app.test_client()
+    client.post(
+        "/activities",
+        json={
+            "type": "file_changed",
+            "path": "/project/a.py",
+            "event": "modified",
+            "workspace": "/project",
+        },
+    )
+
+    response = client.get("/status")
+    status = response.get_json()
+
+    assert response.status_code == 200
+    assert status["daemon"] == "running"
+    assert status["url"] == "http://127.0.0.1:5000/"
+    assert status["database_path"] == str(database_path)
+    assert status["database_exists"] is True
+    assert status["event_count"] == 1
+    assert status["displayed_session_count"] == 1
+    assert status["last_event"]["type"] == "file_changed"
+    assert status["primary_workspace"] == "/project"
+    assert status["terminal_watcher"].startswith("external")
+
+
 def test_ignored_terminal_command_is_not_stored(tmp_path):
     app = create_app(tmp_path / "trace.db")
     client = app.test_client()

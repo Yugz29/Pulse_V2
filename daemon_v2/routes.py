@@ -1,9 +1,13 @@
 """HTTP routes for activity ingestion and daily trace retrieval."""
 
+from pathlib import Path
+
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from .daily_trace import (
+    build_daily_summary,
     build_daily_trace,
+    primary_workspace,
     render_daily_trace_html,
     render_daily_trace_markdown,
 )
@@ -17,6 +21,35 @@ api = Blueprint("pulse", __name__)
 def get_home():
     trace = build_daily_trace(current_app.config["TRACE_STORE"])
     return Response(render_daily_trace_html(trace), mimetype="text/html")
+
+
+@api.get("/status")
+def get_status():
+    trace = build_daily_trace(current_app.config["TRACE_STORE"])
+    summary = build_daily_summary(trace)
+    last_event = None
+    if trace["sessions"]:
+        activity = trace["sessions"][-1]["activities"][-1]
+        last_event = {
+            "type": activity["type"],
+            "occurred_at": activity["occurred_at"],
+            "summary": activity["summary"],
+        }
+    database_path = Path(current_app.config["DATABASE_PATH"])
+    return jsonify(
+        {
+            "daemon": "running",
+            "url": "http://127.0.0.1:5000/",
+            "database_path": str(database_path),
+            "database_exists": database_path.exists(),
+            "date": trace["date"],
+            "event_count": trace["activity_count"],
+            "displayed_session_count": summary["session_count"],
+            "last_event": last_event,
+            "primary_workspace": primary_workspace(trace),
+            "terminal_watcher": "external; source the Zsh script separately",
+        }
+    )
 
 
 @api.post("/activities")

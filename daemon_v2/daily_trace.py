@@ -280,6 +280,16 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def primary_workspace(trace: dict[str, Any]) -> str | None:
+    counts: dict[str, int] = {}
+    for session in trace["sessions"]:
+        for activity in session["activities"]:
+            workspace = activity.get("details", {}).get("workspace")
+            if workspace:
+                counts[workspace] = counts.get(workspace, 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
 def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     summary = build_daily_summary(trace)
     current = build_current_state(trace)

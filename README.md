@@ -50,6 +50,14 @@ http://127.0.0.1:5000/
 
 La page affiche un résumé déterministe de la journée, les sessions, les commandes terminal, les changements de fichiers regroupés par vague de modification et les applications actives résumées par session.
 
+Vérifier l’état local sans démarrer de processus :
+
+```bash
+./scripts/status.sh
+```
+
+Le même état est disponible en JSON sur `http://127.0.0.1:5000/status`.
+
 ## Envoyer une activité
 
 ```bash
