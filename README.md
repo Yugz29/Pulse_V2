@@ -10,6 +10,23 @@ La version actuelle prend en charge trois signaux d’activité :
 
 Pulse V2 expose une page HTML locale, une trace JSON et une trace Markdown via une API Flask liée à `127.0.0.1`.
 
+## État actuel
+
+Le projet fonctionne comme un prototype produit local :
+
+- le daemon Python reçoit et normalise les activités ;
+- SQLite conserve les événements en append-only dans
+  `~/.pulse_v2/trace.db` ;
+- les événements sont regroupés en sessions de travail ;
+- une vue HTML vivante, des archives HTML et des représentations JSON et
+  Markdown sont produites depuis la même trace quotidienne ;
+- les watchers terminal, fichiers et application alimentent le daemon en
+  best-effort.
+
+L’interface HTML est conservée volontairement comme interface produit vivante.
+Elle sert à stabiliser les blocs, les résumés et la navigation avant
+d’envisager une interface macOS native.
+
 ## Installation
 
 ```bash
@@ -50,6 +67,7 @@ dépôt par polling et redémarre Pulse après un court debounce, sans utiliser 
 événements `file_changed` ni écrire directement dans SQLite.
 
 - `make dev` : lance Pulse localement ;
+- `make dev-reload` : lance Pulse et le redémarre lorsque les sources changent ;
 - `make test` : lance les tests ;
 - `make status` : affiche l’état local ;
 - `make reset` : réinitialise la trace de développement ;
@@ -69,7 +87,12 @@ Ouvrir la page locale de l’activité du jour :
 http://127.0.0.1:5000/
 ```
 
-La page locale affiche les blocs `Maintenant`, `Aujourd’hui`, `État système` et la timeline détaillée. Elle utilise un thème sombre, regroupe les changements de fichiers par vague de modification et résume les applications actives par session.
+La page locale affiche les blocs `Maintenant`, `Reprise`, `Aujourd’hui` et
+`État système`, puis une timeline navigable. Elle regroupe les changements de
+fichiers par vague de modification, résume les sessions, marque les changements
+de projet et synthétise les applications actives. Le bloc `Reprise` complète la
+trace enregistrée avec l’état Git local obtenu par `git status --porcelain` ;
+cet état n’est pas écrit dans SQLite.
 
 Vérifier l’état local sans démarrer de processus :
 
@@ -116,7 +139,22 @@ curl -X POST http://127.0.0.1:5000/activities \
   }'
 ```
 
-## Lire la trace du jour
+## Routes principales
+
+| Route | Format | Rôle |
+| --- | --- | --- |
+| `/` | HTML | Vue vivante de la journée en cours |
+| `/status` | JSON | État local du daemon et de la trace du jour |
+| `/activities` | JSON | Ingestion d’une activité par `POST` |
+| `/trace/today` | JSON | Trace structurée de la journée en cours |
+| `/trace/today.md` | Markdown | Trace lisible de la journée en cours |
+| `/days` | HTML | Liste des jours disponibles |
+| `/trace/days` | JSON | Liste structurée des jours disponibles |
+| `/day/YYYY-MM-DD` | HTML | Archive d’une journée |
+| `/trace/YYYY-MM-DD` | JSON | Trace structurée d’une journée |
+| `/trace/YYYY-MM-DD.md` | Markdown | Trace lisible d’une journée |
+
+Lire la trace JSON du jour :
 
 ```bash
 curl http://127.0.0.1:5000/trace/today
@@ -127,6 +165,57 @@ Pour une trace Markdown lisible, regroupée par session :
 ```bash
 curl http://127.0.0.1:5000/trace/today.md
 ```
+
+### Vue vivante et vue archive
+
+La route `/` représente l’état courant. Elle affiche :
+
+- `Maintenant` ;
+- `Reprise` ;
+- `Aujourd’hui` ;
+- `État système` ;
+- la timeline, ses résumés de session et ses séparateurs de projet ;
+- un lien `Direct` en fin de navigation.
+
+La route `/day/YYYY-MM-DD` représente une archive stable d’une journée. Elle
+affiche `Journal du YYYY-MM-DD`, le résumé du jour et la timeline. Elle
+n’affiche pas `Maintenant`, `Reprise` ni `État système`, et sa navigation se
+termine par `Fin du jour`.
+
+## Structure du code
+
+```text
+daemon_v2/
+  analysis/
+    timeline.py
+  renderers/
+    html.py
+    markdown.py
+  app_watcher.py
+  daily_trace.py
+  file_watcher.py
+  ingest.py
+  main.py
+  models.py
+  routes.py
+  session_tracker.py
+  trace_store.py
+```
+
+- `main.py` crée l’application Flask et initialise le stockage.
+- `routes.py` expose l’ingestion, les vues et les traces.
+- `ingest.py` valide, normalise et masque les données sensibles des activités
+  entrantes.
+- `trace_store.py` encapsule le stockage SQLite append-only.
+- `session_tracker.py` affecte les activités aux sessions.
+- `daily_trace.py` construit la trace quotidienne, calcule les synthèses et
+  conserve les façades publiques de rendu.
+- `analysis/timeline.py` contient les regroupements et sélections purs utilisés
+  pour préparer les timelines.
+- `renderers/html.py` et `renderers/markdown.py` produisent les représentations
+  finales sans template engine.
+- `app_watcher.py` et `file_watcher.py` collectent les signaux locaux ; le
+  watcher terminal reste un script Zsh externe.
 
 ## Watcher terminal
 
@@ -164,10 +253,27 @@ Sur macOS, lancer manuellement le watcher de l’application active avec :
 
 Il utilise la commande locale macOS `lsappinfo`, enregistre uniquement les changements d’application et ne demande ni titre de fenêtre ni accès Accessibility. `scripts/dev.sh` lance ce watcher avec le daemon et le watcher de fichiers.
 
+## Avant une migration SwiftUI
+
+La migration vers SwiftUI/macOS n’est pas le chantier actuel. Elle pourra être
+envisagée lorsque les blocs produit, les règles de synthèse et la navigation
+seront suffisamment stabilisés dans l’interface HTML.
+
+Avant cette étape, les priorités restent la fiabilité des données locales, la
+lisibilité des résumés et la consolidation des contrats JSON. Une extraction
+future de `analysis/summary.py` est possible si les règles de synthèse
+continuent de grossir, mais elle n’est pas nécessaire dans l’architecture
+actuelle.
+
 ## Limites actuelles
 
 - Les entrées sont acceptées via l’API HTTP locale et les watchers optionnels terminal, fichiers et application.
 - Les sessions utilisent une coupure fixe après 30 minutes d’inactivité.
-- Les commandes reçoivent une redaction basique des secrets, sans parsing shell avancé.
+- Les commandes reçoivent un masquage basique des secrets, sans parsing shell
+  avancé.
+- Les watchers fonctionnent en best-effort : une indisponibilité momentanée du
+  daemon peut entraîner la perte d’un événement, sans interrompre le watcher.
 - SQLite est local et mono-machine ; il n’y a pas encore de système de rétention ou de migration.
+- Les scans et agrégations SQLite restent adaptés au volume actuel ; leur coût
+  devra être surveillé lorsque l’historique grandira.
 - Le daemon n’a pas d’authentification, car il écoute uniquement sur `127.0.0.1`.
