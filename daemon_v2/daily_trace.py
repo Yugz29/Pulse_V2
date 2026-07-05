@@ -619,13 +619,13 @@ def build_resume(trace: dict[str, Any]) -> list[ResumeFact]:
         ]
         if git_snapshot.get("branch"):
             git_rows.append(("Branche", str(git_snapshot["branch"])))
-        if git_snapshot.get("commit"):
-            git_rows.append(
-                ("Dernier commit", str(git_snapshot["commit"]))
-            )
         commits_today = git_snapshot.get("commits_today")
         if isinstance(commits_today, list) and commits_today:
             git_rows.append(("Commits aujourd’hui", commits_today))
+        elif git_snapshot.get("commit"):
+            git_rows.append(
+                ("Dernier commit", str(git_snapshot["commit"]))
+            )
         git_group = ("Git", git_rows)
     if current["project"] != "Non détecté":
         facts.append(f"Dernier projet observé : {current['project']}")

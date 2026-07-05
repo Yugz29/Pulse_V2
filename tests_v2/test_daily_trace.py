@@ -670,7 +670,6 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
         "### Git\n"
         "- État local : propre\n"
         "- Branche : main\n"
-        "- Dernier commit : pushed changes\n"
         "- Commits aujourd’hui :\n"
         "  - pushed changes"
     ) in markdown
@@ -684,7 +683,6 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
         '<div class="resume-git"><h3>Git</h3><dl>'
         "<dt>État local</dt><dd>propre</dd>"
         "<dt>Branche</dt><dd>main</dd>"
-        "<dt>Dernier commit</dt><dd>pushed changes</dd>"
         "<dt>Commits aujourd’hui</dt><dd><ul>"
         "<li>pushed changes</li></ul></dd></dl></div>"
     ) in html
@@ -1093,18 +1091,15 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "### Git\n"
         "- État local : propre\n"
         "- Branche : main\n"
-        "- Dernier commit : passive local commit\n"
         "- Commits aujourd’hui :\n"
         "  - passive local commit\n"
         "  - earlier local commit"
     ) in markdown
+    assert "- Dernier commit :" not in markdown
     assert "Dernière commande Git observée" not in markdown
     assert "<dt>État local</dt><dd>propre</dd>" in html
     assert "<dt>Branche</dt><dd>main</dd>" in html
-    assert (
-        "<dt>Dernier commit</dt><dd>passive local commit</dd>"
-        in html
-    )
+    assert "<dt>Dernier commit</dt>" not in html
     assert (
         "<dt>Commits aujourd’hui</dt><dd><ul>"
         "<li>passive local commit</li><li>earlier local commit</li>"
@@ -1129,6 +1124,16 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "1 fichier supprimé</dd>"
     ) in html
     assert "- Branche : feature/passive-git" in markdown
+
+    log_result["stdout"] = (
+        "2026-07-02T16:00:00+00:00\0older commit\n"
+    )
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    assert "- Dernier commit : older commit" in markdown
+    assert "- Commits aujourd’hui :" not in markdown
+    assert "<dt>Dernier commit</dt><dd>older commit</dd>" in html
+    assert "<dt>Commits aujourd’hui</dt>" not in html
 
     status_result["returncode"] = 128
     assert "### Git" not in render_daily_trace_markdown(trace)
