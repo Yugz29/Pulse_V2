@@ -460,8 +460,8 @@ def render_available_days_html(
         day = escape(item["date"])
         event_count = item["event_count"]
         session_count = item["session_count"]
-        projects = ", ".join(escape(project) for project in item["projects"])
-        if len(item["project_summaries"]) > 1:
+        project_count = len(item["projects"])
+        if item["project_summaries"]:
             project_blocks = "".join(
                 '<section class="day-project-summary">'
                 f"<h3>{escape(project['project'])}</h3>"
@@ -486,7 +486,8 @@ def render_available_days_html(
             f"<h2>{day}</h2>"
             f"<p>{event_count} événement{'s' if event_count != 1 else ''} · "
             f"{session_count} session{'s' if session_count != 1 else ''}</p>"
-            f"<p>Projets : {projects or 'Aucun'}</p>"
+            f'<p class="day-project-count">{project_count} '
+            f"{'Projet' if project_count == 1 else 'Projets'}</p>"
             f"{summary}"
             f'<nav><a href="/day/{day}">HTML</a> · '
             f'<a href="/trace/{day}">JSON</a> · '
@@ -508,6 +509,7 @@ margin:0 auto;padding:2.5rem 1.5rem 4rem;background:var(--bg);color:var(--text)}
 header{margin-bottom:1.5rem}h1{margin:0 0 .2rem;font-size:2rem}header p,.day p{
 color:var(--muted);margin:.2rem 0}.days{display:grid;gap:1rem}.day{background:var(--panel);
 border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem}
+.day .day-project-count{margin-top:.35rem;color:#aab5c1}
 .day-summary{max-width:62ch;margin:.8rem 0 .7rem;padding-left:.8rem;
 border-left:2px solid #3a4652}.day .day-summary-primary{color:var(--text);margin:0;
 line-height:1.45}.day .day-summary-secondary{color:#9da8b5;margin:.3rem 0 0;

@@ -294,7 +294,9 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
         "<h2>2026-07-03</h2>"
     )
     assert "7 événements · 1 session" in html
-    assert "Projets : Pulse_V2, Pulse_Sandbox" in html
+    assert '<p class="day-project-count">2 Projets</p>' in html
+    assert '<p class="day-project-count">1 Projet</p>' in html
+    assert "Projets :" not in html
     assert "curl -s http://localhost/status" not in html
     assert "pytest tests_v2" not in html
     assert '<div class="day-project-summaries">' in html
@@ -310,6 +312,11 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     assert (
         '<section class="day-project-summary"><h3>Pulse_Sandbox</h3>'
         '<p class="day-project-summary-primary">1 fichier créé · '
+        "dossiers principaux : racine</p>"
+    ) in html
+    assert (
+        '<section class="day-project-summary"><h3>Legacy</h3>'
+        '<p class="day-project-summary-primary">1 fichier modifié · '
         "dossiers principaux : racine</p>"
     ) in html
     assert 'href="/day/2026-07-04">HTML</a>' in html
@@ -338,6 +345,7 @@ def test_trace_days_uses_neutral_summary_for_app_only_day(tmp_path):
         "1 événement",
     ]
     assert response.get_json()["days"][0]["project_summaries"] == []
+    assert '<p class="day-project-count">0 Projets</p>' in html
     assert (
         '<p class="day-summary-primary">'
         "Activité locale — activité enregistrée</p>"
