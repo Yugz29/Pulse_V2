@@ -57,7 +57,10 @@ def render_daily_trace_markdown(
     trace: dict[str, Any],
     archive_mode: bool = False,
 ) -> str:
-    summary = build_daily_summary(trace)
+    summary = build_daily_summary(
+        trace,
+        project_mode="archive" if archive_mode else "live",
+    )
     current = build_current_state(trace) if not archive_mode else None
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)

@@ -13,6 +13,7 @@ from daemon_v2.daily_trace import (
     build_daily_trace,
     build_resume,
     primary_workspace,
+    render_daily_trace_html,
     render_daily_trace_markdown,
 )
 from daemon_v2.models import Activity
@@ -183,16 +184,43 @@ def test_session_propagation_differs_from_exact_days_attribution(tmp_path):
     assert "Tests OK" in available_day["summary"][1]
 
 
-def test_current_git_directory_changes_archive_project_qualification(tmp_path):
+def test_current_git_directory_only_changes_live_project_qualification(tmp_path):
     workspace = tmp_path / "repo"
     workspace.mkdir()
     store = TraceStore(tmp_path / "trace.db")
     append_terminal(store, "echo one observation", str(workspace), minute=0)
     archive_trace = trace_for(store)
 
-    without_git = build_daily_summary(archive_trace)
-    (workspace / ".git").mkdir()
-    with_git = build_daily_summary(archive_trace)
+    archive_summary_before = build_daily_summary(
+        archive_trace, project_mode="archive"
+    )
+    archive_markdown_before = render_daily_trace_markdown(
+        archive_trace, archive_mode=True
+    )
+    archive_html_before = render_daily_trace_html(
+        archive_trace, archive_mode=True
+    )
+    days_before = build_available_days(store, timezone.utc)
 
-    assert without_git["workspaces"] == []
-    assert with_git["workspaces"] == [str(workspace)]
+    (workspace / ".git").mkdir()
+
+    live_summary = build_daily_summary(archive_trace, project_mode="live")
+    live_markdown = render_daily_trace_markdown(archive_trace)
+    archive_summary_after = build_daily_summary(
+        archive_trace, project_mode="archive"
+    )
+    archive_markdown_after = render_daily_trace_markdown(
+        archive_trace, archive_mode=True
+    )
+    archive_html_after = render_daily_trace_html(
+        archive_trace, archive_mode=True
+    )
+    days_after = build_available_days(store, timezone.utc)
+
+    assert live_summary["workspaces"] == [str(workspace)]
+    assert "- Projets : repo" in live_markdown
+    assert archive_summary_before["workspaces"] == []
+    assert archive_summary_after == archive_summary_before
+    assert archive_markdown_after == archive_markdown_before
+    assert archive_html_after == archive_html_before
+    assert days_after == days_before

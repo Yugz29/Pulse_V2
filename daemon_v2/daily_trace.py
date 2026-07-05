@@ -4,7 +4,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, Literal
 
 from .analysis.projects import (
     activity_workspace,
@@ -40,6 +40,7 @@ _terminal_labels = terminal_labels
 SummaryFact = str | tuple[str, list[str]]
 ResumeGroup = tuple[str, list[tuple[str, str | list[str]]]]
 ResumeFact = str | ResumeGroup
+ProjectQualificationMode = Literal["live", "archive"]
 
 
 def _file_summary_fact(
@@ -557,7 +558,11 @@ def build_resume(trace: dict[str, Any]) -> list[ResumeFact]:
     return facts[:9]
 
 
-def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
+def build_daily_summary(
+    trace: dict[str, Any],
+    *,
+    project_mode: ProjectQualificationMode = "live",
+) -> dict[str, Any]:
     app_counts: dict[str, int] = {}
     workspace_order: list[str] = []
     workspace_counts: dict[str, int] = {}
@@ -599,7 +604,10 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
         and (
             workspace in explicit_file_workspaces
             or workspace_counts[workspace] >= 2
-            or (Path(workspace) / ".git").exists()
+            or (
+                project_mode == "live"
+                and (Path(workspace) / ".git").exists()
+            )
         )
     ]
 
@@ -722,7 +730,7 @@ def build_available_days(
     days = []
     for day in store.activity_dates(zone):
         trace = build_daily_trace(store, day, zone)
-        summary = build_daily_summary(trace)
+        summary = build_daily_summary(trace, project_mode="archive")
         projects = [
             Path(workspace).name for workspace in summary["workspaces"]
         ]
