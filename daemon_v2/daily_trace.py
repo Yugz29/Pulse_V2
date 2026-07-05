@@ -439,12 +439,23 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     files_after_push = bool(
         last_file_at and last_push_at and last_file_at > last_push_at
     )
+    changes_committed_and_pushed = bool(
+        commit_pushed
+        and last_file_at
+        and last_commit_at
+        and last_commit_at >= last_file_at
+    )
     if last_test_succeeded is False:
         state_parts.append("tests échoués")
     elif show_error:
         state_parts.append("erreur récente")
     elif files_after_successful_test:
-        state_parts.append("activité en cours, test non relancé")
+        if changes_committed_and_pushed and git_local == "propre":
+            state_parts.append(
+                "dernier commit pushé, test local non relancé"
+            )
+        else:
+            state_parts.append("activité en cours, test non relancé")
     else:
         if last_test_succeeded:
             state_parts.append("tests OK")

@@ -527,6 +527,91 @@ def test_renders_deterministic_resume_before_today(tmp_path):
     assert html.index('id="reprise"') < html.index('id="aujourdhui"')
 
 
+def test_resume_reports_pushed_changes_with_stale_local_test(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    activities = [
+        Activity(
+            "terminal_finished",
+            first_at,
+            "terminal",
+            "Command succeeded: make test",
+            {
+                "command": "make test",
+                "exit_code": 0,
+                "cwd": str(workspace),
+            },
+        ),
+        Activity(
+            "file_changed",
+            first_at + timedelta(minutes=1),
+            "filesystem",
+            f"Modified {workspace}/app.py",
+            {
+                "path": f"{workspace}/app.py",
+                "event": "modified",
+                "workspace": str(workspace),
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=2),
+            "terminal",
+            'Command succeeded: git commit -m "pushed changes"',
+            {
+                "command": 'git commit -m "pushed changes"',
+                "exit_code": 0,
+                "cwd": str(workspace),
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=3),
+            "terminal",
+            "Command succeeded: git push",
+            {
+                "command": "git push",
+                "exit_code": 0,
+                "cwd": str(workspace),
+            },
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    monkeypatch.setattr(
+        "daemon_v2.daily_trace.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="", returncode=0
+        ),
+    )
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert (
+        "- État : dernier commit pushé, test local non relancé"
+        in markdown
+    )
+    assert "- Git local : propre" in markdown
+    assert "- Dernier test : make test — OK" in markdown
+    assert "- Dernier Git : pushed changes — push" in markdown
+    assert (
+        "<dt>État</dt><dd>"
+        "dernier commit pushé, test local non relancé</dd>"
+    ) in html
+    assert "<dt>Git local</dt><dd>propre</dd>" in html
+    assert "<dt>Dernier test</dt><dd>make test — OK</dd>" in html
+    assert (
+        "<dt>Dernier Git</dt><dd>pushed changes — push</dd>"
+        in html
+    )
+
+
 def test_resume_reports_latest_terminal_error(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     occurred_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
