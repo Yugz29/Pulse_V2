@@ -6,6 +6,12 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
+from .analysis.projects import (
+    activity_workspace,
+    is_weak_workspace,
+    last_observed_workspace,
+    most_frequent_explicit_workspace,
+)
 from .analysis.terminal import (
     TERMINAL_LABEL_ORDER,
     is_pasted_prompt_command,
@@ -17,11 +23,9 @@ from .analysis.terminal import (
 )
 from .analysis.timeline import (
     IGNORED_APP_NAMES_FOR_RENDERING,
-    _activity_workspace,
     _display_file_path,
     _display_time,
     _displayed_sessions,
-    _is_weak_workspace,
 )
 from .trace_store import TraceStore
 
@@ -77,7 +81,7 @@ def build_session_summary(
 
     for activity in session["activities"]:
         details = activity.get("details", {})
-        workspace = _activity_workspace(activity)
+        workspace = activity_workspace(activity)
         workspace_is_useful = (
             activity["type"] != "terminal_finished"
             or bool(_useful_command_lines(details.get("command")))
@@ -181,7 +185,7 @@ def _session_project_summaries(
     grouped_activities: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
     active_workspace = None
     for activity in session["activities"]:
-        workspace = _activity_workspace(activity)
+        workspace = activity_workspace(activity)
         if workspace in project_workspaces:
             active_workspace = workspace
             grouped_activities.setdefault(workspace, [])
@@ -242,7 +246,7 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
             if len(recent_files) == 5:
                 break
 
-    workspace = None
+    workspace = last_observed_workspace(trace)
     last_app = None
     last_command = None
     last_useful_activity = None
@@ -260,12 +264,6 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
                 )
                 if useful_activity:
                     last_useful_activity = activity
-                    activity_workspace = _activity_workspace(activity)
-                    if (
-                        activity_workspace
-                        and not _is_weak_workspace(activity_workspace)
-                    ):
-                        workspace = activity_workspace
             if activity["type"] == "terminal_finished":
                 command_lines = [
                     line.strip()
@@ -571,7 +569,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     for session in trace["sessions"]:
         for activity in session["activities"]:
             details = activity.get("details", {})
-            workspace = _activity_workspace(activity)
+            workspace = activity_workspace(activity)
             workspace_is_useful = (
                 activity["type"] != "terminal_finished"
                 or bool(_useful_command_lines(details.get("command")))
@@ -597,7 +595,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     workspaces = [
         workspace
         for workspace in workspace_order
-        if not _is_weak_workspace(workspace)
+        if not is_weak_workspace(workspace)
         and (
             workspace in explicit_file_workspaces
             or workspace_counts[workspace] >= 2
@@ -620,13 +618,7 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
 
 
 def primary_workspace(trace: dict[str, Any]) -> str | None:
-    counts: dict[str, int] = {}
-    for session in trace["sessions"]:
-        for activity in session["activities"]:
-            workspace = activity.get("details", {}).get("workspace")
-            if workspace and not _is_weak_workspace(workspace):
-                counts[workspace] = counts.get(workspace, 0) + 1
-    return max(counts, key=counts.get) if counts else None
+    return most_frequent_explicit_workspace(trace)
 
 
 def render_daily_trace_markdown(
@@ -744,7 +736,7 @@ def build_available_days(
             project_activities = [
                 activity
                 for activity in activities
-                if _activity_workspace(activity) == workspace
+                if activity_workspace(activity) == workspace
             ]
             if project_activities:
                 project_summaries.append(

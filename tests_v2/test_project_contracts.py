@@ -1,6 +1,10 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from daemon_v2.analysis.projects import (
+    last_observed_workspace,
+    most_frequent_explicit_workspace,
+)
 from daemon_v2.daily_trace import (
     _session_project_summaries,
     build_available_days,
@@ -93,10 +97,12 @@ def test_one_terminal_workspace_is_live_but_not_a_qualified_day_project(tmp_path
 
     assert current["workspace"] == workspace
     assert current["project"] == "single-observation"
+    assert last_observed_workspace(trace) == workspace
     assert "Dernier projet observé : single-observation" in resume
     assert summary["workspaces"] == []
     # /status uses only explicit `details.workspace`, not terminal CWD values.
     assert primary_workspace(trace) is None
+    assert most_frequent_explicit_workspace(trace) is None
 
 
 def test_day_project_qualification_uses_files_or_two_useful_signals(tmp_path):

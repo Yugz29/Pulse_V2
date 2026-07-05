@@ -5,8 +5,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .projects import activity_workspace, is_weak_workspace
+
 
 IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu", "Finder", "loginwindow"}
+
+# Temporary aliases preserve the renderer-facing timeline API.
+_activity_workspace = activity_workspace
+_is_weak_workspace = is_weak_workspace
 
 
 def _display_time(value: str) -> str:
@@ -64,26 +70,6 @@ def _display_file_path(path: str, workspace: str | None) -> str:
         except ValueError:
             pass
     return str(display_path)
-
-
-def _activity_workspace(activity: dict[str, Any]) -> str | None:
-    details = activity.get("details", {})
-    if details.get("workspace"):
-        return details["workspace"]
-    if activity["type"] == "terminal_finished" and details.get("cwd"):
-        return details["cwd"]
-    return None
-
-
-def _generic_workspace_containers(home: Path) -> set[Path]:
-    # Local heuristic only; this can become configurable if more layouts emerge.
-    return {home / "Projets"}
-
-
-def _is_weak_workspace(workspace: str) -> bool:
-    path = Path(workspace).expanduser()
-    home = Path.home()
-    return path == home or path in _generic_workspace_containers(home)
 
 
 def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
