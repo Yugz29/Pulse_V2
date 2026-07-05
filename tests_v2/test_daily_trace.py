@@ -1062,11 +1062,13 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         )
     )
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
-    result = {"stdout": "", "returncode": 0}
+    status_result = {"stdout": "## main\n", "returncode": 0}
+    log_result = {"stdout": "passive local commit\n", "returncode": 0}
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
+        result = log_result if "log" in command else status_result
         return SimpleNamespace(**result)
 
     monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
@@ -1074,9 +1076,22 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     assert "- État Git local : propre" in markdown
+    assert "- Branche Git : main" in markdown
+    assert "- Dernier commit local : passive local commit" in markdown
+    assert "Dernière commande Git observée" not in markdown
     assert "<dt>État Git local</dt><dd>propre</dd>" in html
+    assert "<dt>Branche Git</dt><dd>main</dd>" in html
+    assert (
+        "<dt>Dernier commit local</dt><dd>passive local commit</dd>"
+        in html
+    )
+    assert "<dt>Dernière commande Git observée</dt>" not in html
+    assert trace["activity_count"] == 1
 
-    result["stdout"] = " M changed.py\n?? new.py\nD  deleted.py\n"
+    status_result["stdout"] = (
+        "## feature/passive-git\n"
+        " M changed.py\n?? new.py\nD  deleted.py\n"
+    )
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     expected = (
@@ -1088,8 +1103,9 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "<dt>État Git local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
         "1 fichier supprimé</dd>"
     ) in html
+    assert "- Branche Git : feature/passive-git" in markdown
 
-    result["returncode"] = 128
+    status_result["returncode"] = 128
     assert "État Git local :" not in render_daily_trace_markdown(trace)
     assert "<dt>État Git local</dt>" not in render_daily_trace_html(trace)
     assert calls
@@ -1099,9 +1115,22 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "-C",
         str(workspace),
         "status",
-        "--porcelain",
+        "--short",
+        "--branch",
     ]
     assert kwargs["timeout"] == 1
+    assert any(
+        command == [
+            "git",
+            "-C",
+            str(workspace),
+            "log",
+            "-1",
+            "--pretty=%s",
+        ]
+        and kwargs["timeout"] == 1
+        for command, kwargs in calls
+    )
 
 
 def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):

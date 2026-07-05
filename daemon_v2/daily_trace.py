@@ -420,12 +420,12 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _git_local_summary(workspace: str) -> str | None:
+def _git_local_snapshot(workspace: str) -> dict[str, str] | None:
     if not Path(workspace).is_dir():
         return None
     try:
-        result = subprocess.run(
-            ["git", "-C", workspace, "status", "--porcelain"],
+        status_result = subprocess.run(
+            ["git", "-C", workspace, "status", "--short", "--branch"],
             capture_output=True,
             text=True,
             timeout=1,
@@ -433,11 +433,18 @@ def _git_local_summary(workspace: str) -> str | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    if result.returncode != 0:
+    if status_result.returncode != 0:
         return None
 
+    status_lines = status_result.stdout.splitlines()
+    branch = None
+    if status_lines and status_lines[0].startswith("## "):
+        branch_value = status_lines.pop(0)[3:].split("...", 1)[0]
+        if branch_value and branch_value != "HEAD (no branch)":
+            branch = branch_value
+
     counts = {"modified": 0, "untracked": 0, "deleted": 0}
-    for line in result.stdout.splitlines():
+    for line in status_lines:
         if len(line) < 2 or line.startswith("!!"):
             continue
         status = line[:2]
@@ -447,29 +454,48 @@ def _git_local_summary(workspace: str) -> str | None:
             counts["deleted"] += 1
         else:
             counts["modified"] += 1
-    if not any(counts.values()):
-        return "propre"
+    if any(counts.values()):
+        parts = []
+        labels = (
+            ("modified", "fichier modifié", "fichiers modifiés"),
+            ("untracked", "fichier non suivi", "fichiers non suivis"),
+            ("deleted", "fichier supprimé", "fichiers supprimés"),
+        )
+        for key, singular, plural in labels:
+            count = counts[key]
+            if count:
+                parts.append(f"{count} {singular if count == 1 else plural}")
+        status_summary = ", ".join(parts)
+    else:
+        status_summary = "propre"
 
-    parts = []
-    labels = (
-        ("modified", "fichier modifié", "fichiers modifiés"),
-        ("untracked", "fichier non suivi", "fichiers non suivis"),
-        ("deleted", "fichier supprimé", "fichiers supprimés"),
-    )
-    for key, singular, plural in labels:
-        count = counts[key]
-        if count:
-            parts.append(f"{count} {singular if count == 1 else plural}")
-    return ", ".join(parts)
+    snapshot = {"status": status_summary}
+    if branch:
+        snapshot["branch"] = branch
+    try:
+        log_result = subprocess.run(
+            ["git", "-C", workspace, "log", "-1", "--pretty=%s"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return snapshot
+    commit_message = log_result.stdout.strip()
+    if log_result.returncode == 0 and commit_message:
+        snapshot["commit"] = commit_message.splitlines()[0]
+    return snapshot
 
 
 def build_resume(trace: dict[str, Any]) -> list[str]:
     current = build_current_state(trace)
-    git_local = (
-        _git_local_summary(current["workspace"])
+    git_snapshot = (
+        _git_local_snapshot(current["workspace"])
         if current["workspace"] != "Non détecté"
         else None
     )
+    git_local = git_snapshot["status"] if git_snapshot else None
     last_test = None
     last_commit = None
     last_commit_at = None
@@ -571,6 +597,10 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
         facts.append(f"État : {', '.join(state_parts)}")
     if git_local:
         facts.append(f"État Git local : {git_local}")
+    if git_snapshot and git_snapshot.get("branch"):
+        facts.append(f"Branche Git : {git_snapshot['branch']}")
+    if git_snapshot and git_snapshot.get("commit"):
+        facts.append(f"Dernier commit local : {git_snapshot['commit']}")
     if current["project"] != "Non détecté":
         facts.append(f"Dernier projet observé : {current['project']}")
     if current["last_activity_type"]:
@@ -597,7 +627,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             git_value = f"{last_commit} — push"
         facts.append(f"Dernière commande Git observée : {git_value}")
     if show_error:
-        if len(facts) >= 7:
+        if len(facts) >= 9:
             files_index = next(
                 (
                     index
@@ -609,7 +639,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             if files_index is not None:
                 facts.pop(files_index)
         facts.append(f"Erreur terminal récente : {last_error}")
-    return facts[:7]
+    return facts[:9]
 
 
 def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
