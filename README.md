@@ -8,6 +8,9 @@ La version actuelle prend en charge trois signaux d’activité :
 - `file_changed` depuis le watcher de fichiers du workspace ;
 - `app_activated` depuis le watcher macOS de l’application active.
 
+Pulse complète ces signaux avec une lecture Git passive au rendu pour enrichir
+la reprise du projet courant, sans écrire ces informations dans SQLite.
+
 Pulse V2 expose une page HTML locale, une trace JSON et une trace Markdown via une API Flask liée à `127.0.0.1`.
 
 ## État actuel
@@ -53,14 +56,14 @@ personnel utilisateur.
 À ce stade, Pulse reste factuel. Il ne produit pas encore de synthèse
 intelligente et ne cherche pas à deviner l’intention du travail. Le bloc
 `Reprise` expose uniquement des signaux observés ou déduits prudemment à partir
-de l’activité locale, comme l’état Git local, le dernier test local observé, la
-dernière commande Git observée et les derniers fichiers observés.
+de l’activité locale, comme le dernier test local observé, les derniers fichiers
+observés et un contexte Git local lu passivement au rendu.
 
-Les prochaines limites connues de ce palier sont :
-
-- Git est encore principalement observé via les commandes terminal ;
-- les commits faits via VS Code ou un autre client Git ne sont pas encore
-  observés comme événements Git dédiés ;
+- Les prochaines limites connues de ce palier sont :
+  - les commandes Git restent observées via le terminal, mais le contexte Git
+    affiché dans `Reprise` vient de l’état réel du dépôt lu passivement ;
+  - les commits faits via VS Code ou un autre client Git sont visibles dans le
+    contexte Git local, mais ne créent pas encore d’événements Git dédiés ;
 - le projet courant repose encore sur des heuristiques de workspace ;
 - Pulse ne produit pas encore de synthèse assistée par IA ;
 - l’interface HTML reste un prototype produit vivant, pas l’interface macOS
@@ -130,8 +133,9 @@ La page locale affiche les blocs `Maintenant`, `Reprise`, `Aujourd’hui` et
 `État système`, puis une timeline navigable. Elle regroupe les changements de
 fichiers par vague de modification, résume les sessions, marque les changements
 de projet et synthétise les applications actives. Le bloc `Reprise` complète la
-trace enregistrée avec l’état Git local obtenu par `git status --porcelain` ;
-cet état n’est pas écrit dans SQLite.
+trace enregistrée avec un contexte Git local lu passivement : état du dépôt,
+branche et commits du jour. Cette lecture Git est best-effort, limitée par un
+timeout court, et n’est pas écrite dans SQLite.
 
 Vérifier l’état local sans démarrer de processus :
 
@@ -221,11 +225,20 @@ affiche `Journal du YYYY-MM-DD`, le résumé du jour et la timeline. Elle
 n’affiche pas `Maintenant`, `Reprise` ni `État système`, et sa navigation se
 termine par `Fin du jour`.
 
+Les vues datées HTML et Markdown sont temporellement stables : elles n’affichent
+pas `Maintenant` ni `Reprise`, et ne consultent pas l’état Git courant. La
+qualification des projets distingue également le mode live du mode archive : la
+vue live peut utiliser l’existence actuelle de `.git` comme preuve de projet,
+tandis que les archives et `/days` se basent uniquement sur les signaux stockés
+de la journée.
+
 ## Structure du code
 
 ```text
 daemon_v2/
   analysis/
+    projects.py
+    terminal.py
     timeline.py
   renderers/
     html.py
@@ -249,6 +262,10 @@ daemon_v2/
 - `session_tracker.py` affecte les activités aux sessions.
 - `daily_trace.py` construit la trace quotidienne, calcule les synthèses et
   conserve les façades publiques de rendu.
+- `analysis/terminal.py` contient la classification des commandes terminal et
+  le parsing des commandes Git observées.
+- `analysis/projects.py` contient les helpers purs liés aux workspaces et aux
+  notions de projet observé ou explicite.
 - `analysis/timeline.py` contient les regroupements et sélections purs utilisés
   pour préparer les timelines.
 - `renderers/html.py` et `renderers/markdown.py` produisent les représentations
@@ -299,20 +316,22 @@ envisagée lorsque les blocs produit, les règles de synthèse et la navigation
 seront suffisamment stabilisés dans l’interface HTML.
 
 Avant cette étape, les priorités restent la fiabilité des données locales, la
-lisibilité des résumés et la consolidation des contrats JSON. Une extraction
-future de `analysis/summary.py` est possible si les règles de synthèse
-continuent de grossir, mais elle n’est pas nécessaire dans l’architecture
-actuelle.
+lisibilité des résumés et la consolidation des contrats JSON. Les premières
+briques d’analyse sont maintenant séparées dans `analysis/terminal.py`,
+`analysis/projects.py` et `analysis/timeline.py`. Une extraction future de
+`analysis/summary.py` est possible si les règles de synthèse continuent de
+grossir, mais elle n’est pas nécessaire dans l’architecture actuelle.
 
 ## Limites actuelles
 
 - Les entrées sont acceptées via l’API HTTP locale et les watchers optionnels terminal, fichiers et application.
 - Les sessions utilisent une coupure fixe après 30 minutes d’inactivité.
-- Git est encore principalement observé via les commandes terminal ; les commits
-  effectués depuis VS Code ou un autre client Git ne sont pas encore détectés
-  passivement comme événements Git dédiés.
-- Le projet courant repose encore sur des heuristiques de workspace et pourra
-  être renforcé par un contexte projet plus explicite.
+- Les commandes Git restent observées via le terminal ; les commits effectués
+  depuis VS Code ou un autre client Git sont visibles via la lecture Git passive,
+  mais ne créent pas encore d’événements Git dédiés.
+- Le projet courant repose encore sur des heuristiques de workspace ; les notions
+  de workspace observé, workspace explicite et projet qualifié sont séparées
+  dans le code, mais pas encore remplacées par une identité projet durable.
 - Les commandes reçoivent un masquage basique des secrets, sans parsing shell
   avancé.
 - Les watchers fonctionnent en best-effort : une indisponibilité momentanée du
@@ -320,6 +339,9 @@ actuelle.
 - SQLite est local et mono-machine ; il n’y a pas encore de système de rétention ou de migration.
 - Les scans et agrégations SQLite restent adaptés au volume actuel ; leur coût
   devra être surveillé lorsque l’historique grandira.
+- Les archives datées évitent les lectures live de Git et de `Reprise`, mais les
+  règles de résumé restent des projections déterministes de la trace, pas des
+  faits métier persistés.
 - Pulse ne produit pas encore de synthèse intelligente : les résumés restent
   factuels et issus des signaux observés.
 - Le daemon n’a pas d’authentification, car il écoute uniquement sur `127.0.0.1`.
