@@ -3,7 +3,6 @@
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
-import shlex
 import subprocess
 from typing import Any
 
@@ -12,6 +11,7 @@ from .analysis.terminal import (
     is_pasted_prompt_command,
     is_pulse_inspection_command,
     is_test_command,
+    parse_git_command,
     terminal_labels,
     useful_command_lines,
 )
@@ -114,17 +114,14 @@ def build_session_summary(
                 if line not in target:
                     target.append(line)
         for line in command_lines:
-            try:
-                parts = shlex.split(line)
-            except ValueError:
-                parts = line.split()
-            if parts[:2] == ["git", "commit"]:
+            git_command = parse_git_command(line)
+            if git_command.action == "commit":
                 git_commit_observed = True
-                if "-m" in parts and parts.index("-m") + 1 < len(parts):
-                    message = parts[parts.index("-m") + 1]
+                if git_command.commit_message is not None:
+                    message = git_command.commit_message
                     if message not in commit_messages:
                         commit_messages.append(message)
-            elif parts[:2] == ["git", "push"]:
+            elif git_command.action == "push":
                 git_push_observed = True
         if (
             isinstance(exit_code, int)
@@ -440,16 +437,15 @@ def build_resume(trace: dict[str, Any]) -> list[ResumeFact]:
                 if exit_code == 0:
                     last_successful_test_at = occurred_at
             for line in command_lines:
-                try:
-                    parts = shlex.split(line)
-                except ValueError:
-                    parts = line.split()
-                if parts[:2] == ["git", "commit"]:
-                    last_commit = "commit"
-                    if "-m" in parts and parts.index("-m") + 1 < len(parts):
-                        last_commit = parts[parts.index("-m") + 1]
+                git_command = parse_git_command(line)
+                if git_command.action == "commit":
+                    last_commit = (
+                        git_command.commit_message
+                        if git_command.commit_message is not None
+                        else "commit"
+                    )
                     last_commit_at = occurred_at
-                elif parts[:2] == ["git", "push"]:
+                elif git_command.action == "push":
                     last_push_at = occurred_at
             if (
                 isinstance(exit_code, int)
@@ -851,13 +847,10 @@ def _build_compact_activity_summary(
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
             saw_error = saw_error or exit_code != 0
         for line in command_lines:
-            try:
-                parts = shlex.split(line)
-            except ValueError:
-                parts = line.split()
-            if parts[:2] == ["git", "commit"]:
+            git_command = parse_git_command(line)
+            if git_command.action == "commit":
                 commit_count += 1
-            elif parts[:2] == ["git", "push"]:
+            elif git_command.action == "push":
                 saw_push = True
 
     primary_facts = []

@@ -2,12 +2,46 @@
 
 import re
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 
 TERMINAL_LABEL_ORDER = ("test", "git", "pulse", "erreur")
+
+
+@dataclass(frozen=True)
+class ObservedGitCommand:
+    is_git: bool
+    action: str | None = None
+    commit_message: str | None = None
+
+
+def parse_git_command(command: str) -> ObservedGitCommand:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    if not parts or parts[0] != "git":
+        return ObservedGitCommand(is_git=False)
+
+    action = parts[1] if len(parts) > 1 else "other"
+    if action not in {"commit", "push", "pull", "status"}:
+        action = "other"
+
+    commit_message = None
+    if (
+        action == "commit"
+        and "-m" in parts
+        and parts.index("-m") + 1 < len(parts)
+    ):
+        commit_message = parts[parts.index("-m") + 1]
+    return ObservedGitCommand(
+        is_git=True,
+        action=action,
+        commit_message=commit_message,
+    )
 
 
 def is_test_command(line: str) -> bool:
@@ -123,10 +157,7 @@ def terminal_labels(activity: dict[str, Any]) -> list[str]:
     for line in command_lines:
         if is_test_command(line):
             labels.add("test")
-        if any(
-            line == prefix or line.startswith(f"{prefix} ")
-            for prefix in ("git commit", "git push", "git pull", "git status")
-        ):
+        if parse_git_command(line).action in {"commit", "push", "pull", "status"}:
             labels.add("git")
         if any(
             line == prefix or line.startswith(f"{prefix} ")

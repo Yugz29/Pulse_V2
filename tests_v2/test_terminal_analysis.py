@@ -4,6 +4,7 @@ from daemon_v2.analysis.terminal import (
     is_pasted_prompt_command,
     is_pulse_inspection_command,
     is_test_command,
+    parse_git_command,
     terminal_labels,
     useful_command_lines,
 )
@@ -102,3 +103,51 @@ def test_terminal_error_label_preserves_exit_code_contract(exit_code, has_error)
     )
 
     assert ("erreur" in labels) is has_error
+
+
+@pytest.mark.parametrize(
+    ("command", "is_git", "action", "commit_message"),
+    [
+        ('git commit -m "message cité"', True, "commit", "message cité"),
+        ("git commit -m message", True, "commit", "message"),
+        ("git commit", True, "commit", None),
+        ("git push", True, "push", None),
+        ("git pull", True, "pull", None),
+        ("git status", True, "status", None),
+        ("echo git status", False, None, None),
+        # Global Git options are intentionally not interpreted yet.
+        ("git -C repo status", True, "other", None),
+        # Only the separate `-m` form is extracted today.
+        ("git commit -am message", True, "commit", None),
+    ],
+)
+def test_parses_observed_git_commands(
+    command, is_git, action, commit_message
+):
+    parsed = parse_git_command(command)
+
+    assert parsed.is_git is is_git
+    assert parsed.action == action
+    assert parsed.commit_message == commit_message
+
+
+def test_git_command_parser_preserves_invalid_quoting_fallback():
+    parsed = parse_git_command('git commit -m "unfinished')
+
+    assert parsed.is_git
+    assert parsed.action == "commit"
+    assert parsed.commit_message == '"unfinished'
+
+
+def test_failed_git_command_remains_an_observed_command():
+    activity = {
+        "details": {
+            "command": 'git commit -m "observed failure"',
+            "exit_code": 1,
+        }
+    }
+
+    parsed = parse_git_command(activity["details"]["command"])
+    assert parsed.action == "commit"
+    assert parsed.commit_message == "observed failure"
+    assert terminal_labels(activity) == ["git", "erreur"]
