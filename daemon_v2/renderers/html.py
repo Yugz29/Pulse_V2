@@ -237,7 +237,6 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         f"<dt>Tests</dt><dd>{summary['test_count']}</dd>",
         f"<dt>Git</dt><dd>{summary['git_count']}</dd>",
         f"<dt>Erreurs</dt><dd>{summary['error_count']}</dd>",
-        f"<dt>Commandes Pulse</dt><dd>{summary['pulse_count']}</dd>",
         f"<dt>Fichiers modifiés</dt><dd>{summary['distinct_file_count']}</dd>",
         f"<dt>Projets</dt><dd>{', '.join(projects) if projects else 'Aucun'}</dd>",
         f"<dt>Apps principales</dt><dd>{', '.join(apps) if apps else 'Aucune'}</dd>",

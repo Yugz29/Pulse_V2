@@ -108,7 +108,6 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         f"- Tests : {summary['test_count']}",
         f"- Git : {summary['git_count']}",
         f"- Erreurs : {summary['error_count']}",
-        f"- Commandes Pulse : {summary['pulse_count']}",
         f"- Fichiers modifiés : {summary['distinct_file_count']}",
         f"- Projets : {', '.join(projects) if projects else 'Aucun'}",
         f"- Apps principales : {', '.join(apps) if apps else 'Aucune'}",

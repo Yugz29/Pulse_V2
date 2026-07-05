@@ -1126,9 +1126,9 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
         "Tests : 3",
         "Git : 1",
         "Erreurs : 1",
-        "Commandes Pulse : 1",
     ):
         assert line in markdown
+    assert "Commandes Pulse :" not in markdown
     assert (
         "**terminal\\_finished** `test` — Command succeeded: "
         "`.venv/bin/python -m pytest tests_v2`"
@@ -1148,7 +1148,7 @@ def test_classifies_terminal_commands_in_summary_markdown_and_html(tmp_path):
     assert "<dt>Tests</dt><dd>3</dd>" in html
     assert "<dt>Git</dt><dd>1</dd>" in html
     assert "<dt>Erreurs</dt><dd>1</dd>" in html
-    assert "<dt>Commandes Pulse</dt><dd>1</dd>" in html
+    assert "<dt>Commandes Pulse</dt>" not in html
 
 
 def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
