@@ -450,12 +450,14 @@ def render_available_days_html(
         event_count = item["event_count"]
         session_count = item["session_count"]
         projects = ", ".join(escape(project) for project in item["projects"])
+        summary = "<br>".join(escape(line) for line in item["summary"])
         day_cards.append(
             '<article class="day">'
             f"<h2>{day}</h2>"
             f"<p>{event_count} événement{'s' if event_count != 1 else ''} · "
             f"{session_count} session{'s' if session_count != 1 else ''}</p>"
             f"<p>Projets : {projects or 'Aucun'}</p>"
+            f'<p class="day-summary">{summary}</p>'
             f'<nav><a href="/day/{day}">HTML</a> · '
             f'<a href="/trace/{day}">JSON</a> · '
             f'<a href="/trace/{day}.md">Markdown</a></nav>'
@@ -476,6 +478,7 @@ margin:0 auto;padding:2.5rem 1.5rem 4rem;background:var(--bg);color:var(--text)}
 header{margin-bottom:1.5rem}h1{margin:0 0 .2rem;font-size:2rem}header p,.day p{
 color:var(--muted);margin:.2rem 0}.days{display:grid;gap:1rem}.day{background:var(--panel);
 border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem}
+.day .day-summary{color:var(--text);margin-top:.65rem}
 .day h2{margin:0 0 .35rem;font-size:1.15rem;color:#e4eaf1}.day nav{margin-top:.65rem}
 a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 footer{margin-top:2rem;color:var(--muted)}

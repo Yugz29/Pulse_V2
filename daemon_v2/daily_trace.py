@@ -664,17 +664,66 @@ def build_available_days(
     for day in store.activity_dates(zone):
         trace = build_daily_trace(store, day, zone)
         summary = build_daily_summary(trace)
+        activities = [
+            activity
+            for session in trace["sessions"]
+            for activity in session["activities"]
+        ]
+        facts = build_session_summary(
+            {"activities": activities},
+            set(summary["workspaces"]),
+            include_projects=False,
+        )
+        projects = [
+            Path(workspace).name for workspace in summary["workspaces"]
+        ]
+        short_summary = _build_short_day_summary(
+            trace["activity_count"],
+            projects,
+            facts,
+        )
         days.append(
             {
                 "date": day.isoformat(),
                 "event_count": trace["activity_count"],
                 "session_count": summary["session_count"],
-                "projects": [
-                    Path(workspace).name for workspace in summary["workspaces"]
-                ],
+                "projects": projects,
+                "summary": short_summary,
             }
         )
     return {"days": days}
+
+
+def _build_short_day_summary(
+    activity_count: int,
+    projects: list[str],
+    facts: list[SummaryFact],
+) -> list[str]:
+    def compact(fact: SummaryFact) -> str:
+        if isinstance(fact, tuple):
+            label, details = fact
+            return f"{label.rstrip(' :')} — {' ; '.join(details)}"
+        return fact
+
+    def shorten(value: str, limit: int = 160) -> str:
+        return value if len(value) <= limit else f"{value[:limit - 1].rstrip()}…"
+
+    if not facts:
+        if projects:
+            return [f"{', '.join(projects)} — activité enregistrée"]
+        label = (
+            "événement enregistré"
+            if activity_count == 1
+            else "événements enregistrés"
+        )
+        return [f"{activity_count} {label}"]
+
+    prefix = ", ".join(projects) if projects else "Activité locale"
+    lines = [shorten(f"{prefix} — {compact(facts[0])}")]
+    remaining = [compact(fact) for fact in facts[1:3]]
+    if remaining:
+        lines.append(shorten(" · ".join(remaining)))
+    return lines
 
 
 def render_available_days_html(

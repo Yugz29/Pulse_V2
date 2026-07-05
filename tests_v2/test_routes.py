@@ -166,6 +166,28 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
                 "workspace": "/project/Pulse_Sandbox",
             },
         ),
+        Activity(
+            "terminal_finished",
+            newest_at + timedelta(minutes=10),
+            "terminal",
+            "Command succeeded: pytest tests_v2",
+            {
+                "command": "pytest tests_v2",
+                "exit_code": 0,
+                "cwd": "/project/Pulse_V2",
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            newest_at + timedelta(minutes=15),
+            "terminal",
+            "Command succeeded: git push",
+            {
+                "command": "git push",
+                "exit_code": 0,
+                "cwd": "/project/Pulse_V2",
+            },
+        ),
     ]
     for activity in activities:
         store.append(activity)
@@ -177,15 +199,21 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
         "days": [
             {
                 "date": "2026-07-04",
-                "event_count": 2,
+                "event_count": 4,
                 "session_count": 1,
                 "projects": ["Pulse_V2", "Pulse_Sandbox"],
+                "summary": [
+                    "Pulse_V2, Pulse_Sandbox — Fichiers — "
+                    "Créés : b.py ; Modifiés : a.py",
+                    "Tests passés : pytest tests_v2 · Git : push",
+                ],
             },
             {
                 "date": "2026-07-03",
                 "event_count": 1,
                 "session_count": 1,
                 "projects": ["Legacy"],
+                "summary": ["Legacy — Fichiers modifiés : a.py"],
             },
         ]
     }
@@ -198,12 +226,39 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     assert html.index("<h2>2026-07-04</h2>") < html.index(
         "<h2>2026-07-03</h2>"
     )
-    assert "2 événements · 1 session" in html
+    assert "4 événements · 1 session" in html
     assert "Projets : Pulse_V2, Pulse_Sandbox" in html
+    assert (
+        "Pulse_V2, Pulse_Sandbox — Fichiers — "
+        "Créés : b.py ; Modifiés : a.py"
+    ) in html
+    assert "Tests passés : pytest tests_v2 · Git : push" in html
+    assert "Modifiés : a.py<br>Tests passés" in html
     assert 'href="/day/2026-07-04">HTML</a>' in html
     assert 'href="/trace/2026-07-04">JSON</a>' in html
     assert 'href="/trace/2026-07-04.md">Markdown</a>' in html
     assert "<script" not in html
+
+
+def test_trace_days_uses_neutral_summary_for_app_only_day(tmp_path):
+    app = create_app(tmp_path / "trace.db")
+    app.config["TRACE_STORE"].append(
+        Activity(
+            "app_activated",
+            datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc),
+            "application",
+            "Activated Code",
+            {"app": "Code"},
+        )
+    )
+
+    response = app.test_client().get("/trace/days")
+    html = app.test_client().get("/days").get_data(as_text=True)
+
+    assert response.get_json()["days"][0]["summary"] == [
+        "1 événement enregistré"
+    ]
+    assert '<p class="day-summary">1 événement enregistré</p>' in html
 
 
 def test_dated_trace_routes_filter_day_and_handle_empty_or_invalid_dates(tmp_path):
