@@ -156,7 +156,10 @@ def get_dated_trace_markdown(date_value):
         current_app.config["TRACE_STORE"],
         day=selected_date,
     )
-    return Response(render_daily_trace_markdown(trace), mimetype="text/markdown")
+    return Response(
+        render_daily_trace_markdown(trace, archive_mode=True),
+        mimetype="text/markdown",
+    )
 
 
 @api.get("/trace/today.md")

@@ -53,10 +53,13 @@ def _markdown_summary_facts(facts: list[SummaryFact]) -> list[str]:
     return lines
 
 
-def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
+def render_daily_trace_markdown(
+    trace: dict[str, Any],
+    archive_mode: bool = False,
+) -> str:
     summary = build_daily_summary(trace)
-    current = build_current_state(trace)
-    resume = build_resume(trace)
+    current = build_current_state(trace) if not archive_mode else None
+    resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
     apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
     projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
@@ -64,38 +67,40 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
     last_activity = (
         f"{_markdown_text(current['last_activity_type'])} — "
         f"{_markdown_text(current['last_activity_description'])}"
-        if current["last_activity_type"]
+        if current and current["last_activity_type"]
         else "Non détectée"
     )
-    lines = [
-        f"# Trace du {trace['date']}",
-        "",
-        "## Maintenant",
-        f"- Projet probable : {_markdown_text(current['project'])}",
-        f"- Workspace : {_markdown_text(current['workspace'])}",
-        f"- App active : {_markdown_text(current['app'])}",
-        (
-            f"- Dernière commande : {_markdown_inline_code(current['command'])}"
-            if current["command"] != "Non détectée"
-            else "- Dernière commande : Non détectée"
-        ),
-        "- Fichiers récents :",
-    ]
-    if current["recent_files"]:
+    lines = [f"# Trace du {trace['date']}", ""]
+    if current:
         lines.extend(
-            f"  - {str(item['event']).capitalize()} "
-            f"{_markdown_inline_code(item['path'])}"
-            for item in current["recent_files"]
+            [
+                "## Maintenant",
+                f"- Projet probable : {_markdown_text(current['project'])}",
+                f"- Workspace : {_markdown_text(current['workspace'])}",
+                f"- App active : {_markdown_text(current['app'])}",
+                (
+                    f"- Dernière commande : {_markdown_inline_code(current['command'])}"
+                    if current["command"] != "Non détectée"
+                    else "- Dernière commande : Non détectée"
+                ),
+                "- Fichiers récents :",
+            ]
         )
-    else:
-        lines.append("  - Aucun")
-    lines.extend(
-        [
-        f"- Session active depuis : {current['session_started_at']}",
-        f"- Dernière activité utile : {last_activity}",
-        "",
-        ]
-    )
+        if current["recent_files"]:
+            lines.extend(
+                f"  - {str(item['event']).capitalize()} "
+                f"{_markdown_inline_code(item['path'])}"
+                for item in current["recent_files"]
+            )
+        else:
+            lines.append("  - Aucun")
+        lines.extend(
+            [
+                f"- Session active depuis : {current['session_started_at']}",
+                f"- Dernière activité utile : {last_activity}",
+                "",
+            ]
+        )
     if resume:
         lines.extend(["## Reprise"])
         for fact in resume:

@@ -1,8 +1,78 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from daemon_v2.main import create_app
 from daemon_v2.models import Activity
+
+
+def test_markdown_archive_omits_live_resume_and_does_not_read_git(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    app = create_app(tmp_path / "trace.db")
+    client = app.test_client()
+    client.post(
+        "/activities",
+        json={
+            "type": "terminal_finished",
+            "occurred_at": "2026-07-03T12:00:00+00:00",
+            "command": "make test",
+            "exit_code": 0,
+            "cwd": str(workspace),
+        },
+    )
+    git_calls = []
+
+    def fake_run(command, **kwargs):
+        git_calls.append(command)
+        if "status" in command:
+            return SimpleNamespace(stdout="## main\n", returncode=0)
+        return SimpleNamespace(stdout="", returncode=0)
+
+    monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
+
+    archive = client.get("/trace/2026-07-03.md").get_data(as_text=True)
+
+    assert "## Maintenant" not in archive
+    assert "## Reprise" not in archive
+    assert "## Aujourd’hui" in archive
+    assert "## Session 1" in archive
+    assert "make test" in archive
+    assert git_calls == []
+
+
+def test_markdown_today_keeps_live_resume(tmp_path, monkeypatch):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    app = create_app(tmp_path / "trace.db")
+    client = app.test_client()
+    client.post(
+        "/activities",
+        json={
+            "type": "terminal_finished",
+            "command": "make test",
+            "exit_code": 0,
+            "cwd": str(workspace),
+        },
+    )
+    git_calls = []
+
+    def fake_run(command, **kwargs):
+        git_calls.append(command)
+        if "status" in command:
+            return SimpleNamespace(stdout="## main\n", returncode=0)
+        return SimpleNamespace(stdout="", returncode=0)
+
+    monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
+
+    live = client.get("/trace/today.md").get_data(as_text=True)
+
+    assert "## Maintenant" in live
+    assert "## Reprise" in live
+    assert "### Git" in live
+    assert git_calls
 
 
 def test_home_route_renders_today_activity_as_html(tmp_path):

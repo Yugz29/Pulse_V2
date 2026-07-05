@@ -755,11 +755,14 @@ def primary_workspace(trace: dict[str, Any]) -> str | None:
     return max(counts, key=counts.get) if counts else None
 
 
-def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
+def render_daily_trace_markdown(
+    trace: dict[str, Any],
+    archive_mode: bool = False,
+) -> str:
     """Render a daily trace as Markdown through the renderer package."""
     from .renderers.markdown import render_daily_trace_markdown as render
 
-    return render(trace)
+    return render(trace, archive_mode=archive_mode)
 
 
 def render_daily_trace_html(
