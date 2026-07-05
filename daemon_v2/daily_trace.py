@@ -477,9 +477,20 @@ def _git_local_snapshot(
     snapshot = {"status": status_summary}
     if branch:
         snapshot["branch"] = branch
+    next_day = (
+        date.fromisoformat(day) + timedelta(days=1)
+    ).isoformat()
     try:
         log_result = subprocess.run(
-            ["git", "-C", workspace, "log", "-5", "--pretty=%cI%x00%s"],
+            [
+                "git",
+                "-C",
+                workspace,
+                "log",
+                f"--since={day}T00:00:00",
+                f"--until={next_day}T00:00:00",
+                "--pretty=%s",
+            ],
             capture_output=True,
             text=True,
             timeout=1,
@@ -488,20 +499,27 @@ def _git_local_snapshot(
     except (OSError, subprocess.TimeoutExpired):
         return snapshot
     if log_result.returncode == 0:
-        commits = []
         commits_today = []
-        for line in log_result.stdout.splitlines():
-            committed_at, separator, message = line.partition("\0")
-            if not separator or not message:
-                continue
-            if message not in commits:
-                commits.append(message)
-            if committed_at[:10] == day and message not in commits_today:
+        for message in log_result.stdout.splitlines():
+            if message and message not in commits_today:
                 commits_today.append(message)
-        if commits:
-            snapshot["commit"] = commits[0]
         if commits_today:
-            snapshot["commits_today"] = commits_today[:5]
+            snapshot["commit"] = commits_today[0]
+            snapshot["commits_today"] = commits_today
+            return snapshot
+    try:
+        last_commit_result = subprocess.run(
+            ["git", "-C", workspace, "log", "-1", "--pretty=%s"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return snapshot
+    last_commit = last_commit_result.stdout.strip()
+    if last_commit_result.returncode == 0 and last_commit:
+        snapshot["commit"] = last_commit.splitlines()[0]
     return snapshot
 
 
@@ -621,7 +639,13 @@ def build_resume(trace: dict[str, Any]) -> list[ResumeFact]:
             git_rows.append(("Branche", str(git_snapshot["branch"])))
         commits_today = git_snapshot.get("commits_today")
         if isinstance(commits_today, list) and commits_today:
-            git_rows.append(("Commits aujourd’hui", commits_today))
+            displayed_commits = commits_today[:5]
+            hidden_count = len(commits_today) - len(displayed_commits)
+            if hidden_count:
+                displayed_commits.append(
+                    f"+ {hidden_count} autres commits aujourd’hui"
+                )
+            git_rows.append(("Commits aujourd’hui", displayed_commits))
         elif git_snapshot.get("commit"):
             git_rows.append(
                 ("Dernier commit", str(git_snapshot["commit"]))

@@ -652,7 +652,7 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
         stdout = (
             "## main\n"
             if "status" in command
-            else "2026-07-03T10:02:00+00:00\0pushed changes\n"
+            else "pushed changes\n"
         )
         return SimpleNamespace(stdout=stdout, returncode=0)
 
@@ -1070,17 +1070,22 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     status_result = {"stdout": "## main\n", "returncode": 0}
     log_result = {
         "stdout": (
-            "2026-07-03T17:59:00+00:00\0passive local commit\n"
-            "2026-07-03T12:00:00+00:00\0earlier local commit\n"
-            "2026-07-02T16:00:00+00:00\0older commit\n"
+            "passive local commit\n"
+            "earlier local commit\n"
         ),
         "returncode": 0,
     }
+    last_log_result = {"stdout": "older commit\n", "returncode": 0}
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
-        result = log_result if "log" in command else status_result
+        if "status" in command:
+            result = status_result
+        elif "-1" in command:
+            result = last_log_result
+        else:
+            result = log_result
         return SimpleNamespace(**result)
 
     monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
@@ -1095,6 +1100,7 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "  - passive local commit\n"
         "  - earlier local commit"
     ) in markdown
+    assert "autres commits aujourd’hui" not in markdown
     assert "- Dernier commit :" not in markdown
     assert "Dernière commande Git observée" not in markdown
     assert "<dt>État local</dt><dd>propre</dd>" in html
@@ -1105,6 +1111,7 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
         "<li>passive local commit</li><li>earlier local commit</li>"
         "</ul></dd>"
     ) in html
+    assert "autres commits aujourd’hui" not in html
     assert "<dt>Dernière commande Git observée</dt>" not in html
     assert trace["activity_count"] == 1
 
@@ -1125,9 +1132,26 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     ) in html
     assert "- Branche : feature/passive-git" in markdown
 
-    log_result["stdout"] = (
-        "2026-07-02T16:00:00+00:00\0older commit\n"
+    log_result["stdout"] = "\n".join(
+        [
+            "commit 7",
+            "commit 6",
+            "commit 5",
+            "commit 4",
+            "commit 3",
+            "commit 2",
+            "commit 1",
+            "commit 7",
+        ]
     )
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    assert markdown.count("  - commit ") == 5
+    assert "  - + 2 autres commits aujourd’hui" in markdown
+    assert "<li>+ 2 autres commits aujourd’hui</li>" in html
+    assert "- Dernier commit :" not in markdown
+
+    log_result["stdout"] = ""
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     assert "- Dernier commit : older commit" in markdown
@@ -1155,8 +1179,21 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
             "-C",
             str(workspace),
             "log",
-            "-5",
-            "--pretty=%cI%x00%s",
+            "--since=2026-07-03T00:00:00",
+            "--until=2026-07-04T00:00:00",
+            "--pretty=%s",
+        ]
+        and kwargs["timeout"] == 1
+        for command, kwargs in calls
+    )
+    assert any(
+        command == [
+            "git",
+            "-C",
+            str(workspace),
+            "log",
+            "-1",
+            "--pretty=%s",
         ]
         and kwargs["timeout"] == 1
         for command, kwargs in calls
