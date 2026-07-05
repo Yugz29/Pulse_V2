@@ -664,66 +664,152 @@ def build_available_days(
     for day in store.activity_dates(zone):
         trace = build_daily_trace(store, day, zone)
         summary = build_daily_summary(trace)
-        activities = [
-            activity
-            for session in trace["sessions"]
-            for activity in session["activities"]
-        ]
-        facts = build_session_summary(
-            {"activities": activities},
-            set(summary["workspaces"]),
-            include_projects=False,
-        )
         projects = [
             Path(workspace).name for workspace in summary["workspaces"]
         ]
-        short_summary = _build_short_day_summary(
-            trace["activity_count"],
-            projects,
-            facts,
-        )
         days.append(
             {
                 "date": day.isoformat(),
                 "event_count": trace["activity_count"],
                 "session_count": summary["session_count"],
                 "projects": projects,
-                "summary": short_summary,
+                "summary": _build_short_day_summary(trace, projects),
             }
         )
     return {"days": days}
 
 
 def _build_short_day_summary(
-    activity_count: int,
+    trace: dict[str, Any],
     projects: list[str],
-    facts: list[SummaryFact],
 ) -> list[str]:
-    def compact(fact: SummaryFact) -> str:
-        if isinstance(fact, tuple):
-            label, details = fact
-            return f"{label.rstrip(' :')} — {' ; '.join(details)}"
-        return fact
-
     def shorten(value: str, limit: int = 160) -> str:
         return value if len(value) <= limit else f"{value[:limit - 1].rstrip()}…"
 
-    if not facts:
-        if projects:
-            return [f"{', '.join(projects)} — activité enregistrée"]
-        label = (
-            "événement enregistré"
-            if activity_count == 1
-            else "événements enregistrés"
-        )
-        return [f"{activity_count} {label}"]
-
     prefix = ", ".join(projects) if projects else "Activité locale"
-    lines = [shorten(f"{prefix} — {compact(facts[0])}")]
-    remaining = [compact(fact) for fact in facts[1:3]]
-    if remaining:
-        lines.append(shorten(" · ".join(remaining)))
-    return lines
+    file_paths = {"created": set(), "modified": set(), "deleted": set()}
+    folder_counts: dict[str, int] = {}
+    folder_order: list[str] = []
+    commit_count = 0
+    saw_push = False
+    saw_test = False
+    failed_test = False
+    saw_error = False
+
+    for session in trace["sessions"]:
+        for activity in session["activities"]:
+            details = activity.get("details", {})
+            if activity["type"] == "file_changed":
+                event = details.get("event", details.get("change"))
+                path = details.get("path")
+                if event in file_paths and path:
+                    file_paths[event].add(path)
+                    display_path = Path(
+                        _display_file_path(path, details.get("workspace"))
+                    )
+                    folder = (
+                        display_path.parts[0]
+                        if not display_path.is_absolute()
+                        and len(display_path.parts) > 1
+                        else "racine"
+                    )
+                    if folder not in folder_counts:
+                        folder_counts[folder] = 0
+                        folder_order.append(folder)
+                    folder_counts[folder] += 1
+                continue
+
+            if activity["type"] != "terminal_finished":
+                continue
+            command = details.get("command")
+            command_lines = (
+                [line.strip() for line in command.splitlines() if line.strip()]
+                if isinstance(command, str)
+                else []
+            )
+            exit_code = details.get("exit_code")
+            test_lines = [line for line in command_lines if _is_test_command(line)]
+            if test_lines:
+                saw_test = True
+                failed_test = failed_test or exit_code != 0
+            if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+                saw_error = saw_error or exit_code != 0
+            for line in command_lines:
+                try:
+                    parts = shlex.split(line)
+                except ValueError:
+                    parts = line.split()
+                if parts[:2] == ["git", "commit"]:
+                    commit_count += 1
+                elif parts[:2] == ["git", "push"]:
+                    saw_push = True
+
+    primary_facts = []
+    if commit_count:
+        primary_facts.append(
+            f"{commit_count} {'commit' if commit_count == 1 else 'commits'}"
+        )
+
+    file_counts = {
+        event: len(paths) for event, paths in file_paths.items() if paths
+    }
+    total_files = len(set().union(*file_paths.values()))
+    if total_files:
+        if len(file_counts) == 1:
+            event, count = next(iter(file_counts.items()))
+            labels = {
+                "created": ("fichier créé", "fichiers créés"),
+                "modified": ("fichier modifié", "fichiers modifiés"),
+                "deleted": ("fichier supprimé", "fichiers supprimés"),
+            }
+            singular, plural = labels[event]
+            primary_facts.append(f"{count} {singular if count == 1 else plural}")
+        else:
+            labels = {
+                "created": ("créé", "créés"),
+                "modified": ("modifié", "modifiés"),
+                "deleted": ("supprimé", "supprimés"),
+            }
+            breakdown = ", ".join(
+                f"{file_counts[event]} "
+                f"{labels[event][0] if file_counts[event] == 1 else labels[event][1]}"
+                for event in ("created", "modified", "deleted")
+                if event in file_counts
+            )
+            primary_facts.append(
+                f"{total_files} fichiers touchés ({breakdown})"
+            )
+
+        folders = sorted(
+            folder_counts,
+            key=lambda folder: (-folder_counts[folder], folder_order.index(folder)),
+        )[:3]
+        primary_facts.append(f"dossiers principaux : {', '.join(folders)}")
+
+    if not primary_facts:
+        primary_facts.append("activité enregistrée")
+
+    secondary = []
+    if saw_test:
+        secondary.append("Tests échoués" if failed_test else "Tests OK")
+    if commit_count and saw_push:
+        secondary.append("Git : commit + push")
+    elif commit_count:
+        secondary.append("Git : commit")
+    elif saw_push:
+        secondary.append("Git : push")
+    if saw_error:
+        secondary.append("Erreurs observées")
+    activity_count = trace["activity_count"]
+    secondary.append(
+        f"{activity_count} "
+        f"{'événement' if activity_count == 1 else 'événements'}"
+    )
+
+    return [
+        shorten(f"{prefix} — {' · '.join(primary_facts)}"),
+        shorten(" · ".join(secondary)),
+    ]
 
 
 def render_available_days_html(
