@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from daemon_v2.daily_trace import (
@@ -1020,6 +1021,84 @@ def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
     assert ">TEST</a>" not in html
     assert ">TEST</li>" not in html
     assert f"CWD : {weak_parent}" in html
+
+
+def test_home_and_projects_parent_are_never_promoted_to_projects(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc)
+    home = str(Path.home())
+    projects_parent = str(Path.home() / "Projets")
+    pulse_v2 = str(Path.home() / "Projets" / "Pulse_V2")
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Modified {pulse_v2}/README.md",
+            {
+                "path": f"{pulse_v2}/README.md",
+                "event": "modified",
+                "workspace": pulse_v2,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=5),
+            "terminal",
+            "Command succeeded: pwd",
+            {"command": "pwd", "exit_code": 0, "cwd": home},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=10),
+            "terminal",
+            "Command succeeded: cd Projets/Pulse_V2",
+            {
+                "command": "cd Projets/Pulse_V2",
+                "exit_code": 0,
+                "cwd": home,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=15),
+            "terminal",
+            "Command succeeded: ls",
+            {"command": "ls", "exit_code": 0, "cwd": projects_parent},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=20),
+            "terminal",
+            "Command succeeded: echo home",
+            {"command": "echo home", "exit_code": 0, "cwd": "~"},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert "- Projet probable : Pulse\\_V2" in markdown
+    assert "- Projets : Pulse\\_V2" in markdown
+    assert f"  - CWD : {home}" in markdown
+    assert f"  - CWD : {projects_parent}" in markdown
+    assert "  - CWD : ~" in markdown
+    assert "### yugz" not in markdown
+    assert "#### yugz" not in markdown
+    assert "### Projets" not in markdown
+    assert "#### Projets" not in markdown
+    assert ">yugz</a>" not in html
+    assert ">yugz</li>" not in html
+    assert ">Projets</a>" not in html
+    assert ">Projets</li>" not in html
+    assert f"CWD : {home}" in html
+    assert f"CWD : {projects_parent}" in html
+    assert "CWD : ~" in html
+    assert ">Pulse_V2</a>" in html
+    assert ">Pulse_V2</li>" in html
 
 
 def test_session_summary_reports_projects_files_tests_and_git(tmp_path):

@@ -32,6 +32,17 @@ def _activity_workspace(activity: dict[str, Any]) -> str | None:
     return None
 
 
+def _generic_workspace_containers(home: Path) -> set[Path]:
+    # Local heuristic only; this can become configurable if more layouts emerge.
+    return {home / "Projets"}
+
+
+def _is_weak_workspace(workspace: str) -> bool:
+    path = Path(workspace).expanduser()
+    home = Path.home()
+    return path == home or path in _generic_workspace_containers(home)
+
+
 def _app_activation_counts(session: dict[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for activity in session["activities"]:

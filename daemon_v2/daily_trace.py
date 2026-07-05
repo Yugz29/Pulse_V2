@@ -13,6 +13,7 @@ from .analysis.timeline import (
     _display_file_path,
     _display_time,
     _displayed_sessions,
+    _is_weak_workspace,
 )
 from .trace_store import TraceStore
 
@@ -282,7 +283,7 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
             else:
                 last_useful_activity = activity
                 activity_workspace = _activity_workspace(activity)
-                if activity_workspace:
+                if activity_workspace and not _is_weak_workspace(activity_workspace):
                     workspace = activity_workspace
             if activity["type"] == "terminal_finished":
                 command_lines = [
@@ -532,9 +533,12 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
     workspaces = [
         workspace
         for workspace in workspace_order
-        if workspace in explicit_file_workspaces
-        or workspace_counts[workspace] >= 2
-        or (Path(workspace) / ".git").exists()
+        if not _is_weak_workspace(workspace)
+        and (
+            workspace in explicit_file_workspaces
+            or workspace_counts[workspace] >= 2
+            or (Path(workspace) / ".git").exists()
+        )
     ]
 
     return {
@@ -556,7 +560,7 @@ def primary_workspace(trace: dict[str, Any]) -> str | None:
     for session in trace["sessions"]:
         for activity in session["activities"]:
             workspace = activity.get("details", {}).get("workspace")
-            if workspace:
+            if workspace and not _is_weak_workspace(workspace):
                 counts[workspace] = counts.get(workspace, 0) + 1
     return max(counts, key=counts.get) if counts else None
 
