@@ -56,7 +56,9 @@ def build_session_summary(
     deleted_files: list[str] = []
     passed_tests: list[str] = []
     failed_tests: list[str] = []
-    git_facts: list[str] = []
+    commit_messages: list[str] = []
+    git_commit_observed = False
+    git_push_observed = False
     errors: list[str] = []
 
     for activity in session["activities"]:
@@ -103,13 +105,13 @@ def build_session_summary(
             except ValueError:
                 parts = line.split()
             if parts[:2] == ["git", "commit"]:
-                fact = "commit"
+                git_commit_observed = True
                 if "-m" in parts and parts.index("-m") + 1 < len(parts):
-                    fact = f"commit — {parts[parts.index('-m') + 1]}"
-                if fact not in git_facts:
-                    git_facts.append(fact)
-            elif parts[:2] == ["git", "push"] and "push" not in git_facts:
-                git_facts.append("push")
+                    message = parts[parts.index("-m") + 1]
+                    if message not in commit_messages:
+                        commit_messages.append(message)
+            elif parts[:2] == ["git", "push"]:
+                git_push_observed = True
         if (
             isinstance(exit_code, int)
             and not isinstance(exit_code, bool)
@@ -146,8 +148,16 @@ def build_session_summary(
         test_parts.append(f"Tests échoués : {', '.join(failed_tests[:3])}")
     if test_parts:
         facts.append(" ; ".join(test_parts))
-    if git_facts:
-        facts.append(f"Git : {' ; '.join(git_facts[:3])}")
+    if len(commit_messages) > 1:
+        facts.append(("Git :", commit_messages[:3]))
+    elif commit_messages:
+        facts.append(f"Git : {commit_messages[0]}")
+    elif git_commit_observed and git_push_observed:
+        facts.append("Git : commit + push")
+    elif git_commit_observed:
+        facts.append("Git : commit")
+    elif git_push_observed:
+        facts.append("Git : push")
     if errors:
         facts.append(f"Erreurs terminal : {', '.join(errors[:3])}")
     return facts[:5]

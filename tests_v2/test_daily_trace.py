@@ -118,7 +118,8 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
     command = (
         "git add .\n"
         'git commit -m "filter multiline terminal noise"\n'
-        "git push"
+        "git push\n"
+        'git commit -m "remove Pulse command count"'
     )
     store.append(
         Activity(
@@ -137,15 +138,24 @@ def test_renders_multiline_terminal_command_as_nested_list(tmp_path):
     assert "## Session 1 — 21:06–21:06" in markdown
     assert (
         "### Résumé de session\n"
-        "- Git : commit — filter multiline terminal noise ; push"
+        "- Git :\n"
+        "  - filter multiline terminal noise\n"
+        "  - remove Pulse command count"
     ) in markdown
     assert (
         "- 21:06 · **terminal\\_finished** `git` — Command succeeded:\n"
         "  - `git add .`\n"
         '  - `git commit -m "filter multiline terminal noise"`\n'
         "  - `git push`\n"
+        '  - `git commit -m "remove Pulse command count"`\n'
         "  - CWD : /project/Pulse\\_V2"
     ) in markdown
+    html = render_daily_trace_html(trace)
+    assert (
+        "<li>Git :<ul><li>filter multiline terminal noise</li>"
+        "<li>remove Pulse command count</li></ul></li>"
+    ) in html
+    assert "<code>git push</code>" in html
 
 
 def test_renders_file_path_relative_to_workspace(tmp_path):
@@ -1563,7 +1573,7 @@ def test_session_summary_reports_projects_files_tests_and_git(tmp_path):
         "- Fichiers créés : scripts/dev\\_reload.py\n"
         "- Tests passés : pytest tests\\_v2, "
         "python -m pytest tests\\_v2/test\\_daily\\_trace.py\n"
-        "- Git : commit — show project changes ; push"
+        "- Git : show project changes"
     ) in markdown
     assert "#### Pulse\\_Sandbox\n- Fichiers créés : src/calc.py" in markdown
     assert "#### TEST" not in markdown
@@ -1575,4 +1585,4 @@ def test_session_summary_reports_projects_files_tests_and_git(tmp_path):
         "Tests passés : pytest tests_v2, "
         "python -m pytest tests_v2/test_daily_trace.py"
     ) in html
-    assert "Git : commit — show project changes ; push" in html
+    assert "Git : show project changes" in html
