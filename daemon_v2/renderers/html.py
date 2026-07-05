@@ -143,6 +143,8 @@ border-radius:12px;padding:1.25rem 1.5rem;margin:1.25rem 0;box-shadow:0 8px 24px
 .resume dl{display:grid;grid-template-columns:10rem minmax(0,1fr);gap:.45rem 1rem;margin:0}
 .resume dt{font-weight:650;color:#b8a8d3}.resume dd{margin:0;min-width:0;
 overflow-wrap:anywhere;color:#cbd3dd}
+.resume-git{margin:.9rem 0}.resume-git h3{font-size:1rem;color:#b8a8d3;
+margin:0 0 .5rem}.resume-git ul{margin:.2rem 0 0;padding-left:1.2rem}
 .current dl,.summary dl,.system dl{display:grid;grid-template-columns:12rem 1fr;
 gap:.5rem 1.25rem;margin:0}.current dt,.summary dt,.system dt{font-weight:600;
 color:#aeb9c6}.current dd,.summary dd,.system dd{margin:0;min-width:0;
@@ -213,15 +215,38 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             ]
         )
     if resume:
-        resume_rows = []
+        resume_content = []
         for fact in resume:
-            label, value = fact.split(" : ", 1)
-            resume_rows.extend(
-                [f"<dt>{escape(label)}</dt>", f"<dd>{escape(value)}</dd>"]
-            )
+            if isinstance(fact, tuple):
+                group_label, rows = fact
+                group_rows = []
+                for label, value in rows:
+                    if isinstance(value, list):
+                        rendered_value = "<ul>" + "".join(
+                            f"<li>{escape(item)}</li>" for item in value
+                        ) + "</ul>"
+                    else:
+                        rendered_value = escape(value)
+                    group_rows.extend(
+                        [
+                            f"<dt>{escape(label)}</dt>",
+                            f"<dd>{rendered_value}</dd>",
+                        ]
+                    )
+                resume_content.append(
+                    '<div class="resume-git">'
+                    f"<h3>{escape(group_label)}</h3>"
+                    f"<dl>{''.join(group_rows)}</dl></div>"
+                )
+            else:
+                label, value = fact.split(" : ", 1)
+                resume_content.append(
+                    f"<dl><dt>{escape(label)}</dt>"
+                    f"<dd>{escape(value)}</dd></dl>"
+                )
         body.append(
             '<section class="resume" id="reprise"><h2>Reprise</h2>'
-            f"<dl>{''.join(resume_rows)}</dl></section>"
+            f"{''.join(resume_content)}</section>"
         )
     body.extend(
         [

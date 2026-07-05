@@ -94,11 +94,25 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         ]
     )
     if resume:
-        lines.extend(
-            ["## Reprise"]
-            + [f"- {_markdown_text(fact)}" for fact in resume]
-            + [""]
-        )
+        lines.extend(["## Reprise"])
+        for fact in resume:
+            if isinstance(fact, tuple):
+                label, rows = fact
+                lines.extend(["", f"### {_markdown_text(label)}"])
+                for row_label, value in rows:
+                    if isinstance(value, list):
+                        lines.append(f"- {_markdown_text(row_label)} :")
+                        lines.extend(
+                            f"  - {_markdown_text(item)}" for item in value
+                        )
+                    else:
+                        lines.append(
+                            f"- {_markdown_text(row_label)} : "
+                            f"{_markdown_text(value)}"
+                        )
+            else:
+                lines.append(f"- {_markdown_text(fact)}")
+        lines.append("")
     lines.extend(
         [
         "## Aujourd’hui",

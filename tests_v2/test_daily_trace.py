@@ -573,16 +573,13 @@ def test_renders_deterministic_resume_before_today(tmp_path):
         ".venv/bin/python -m pytest tests\\_v2 — OK"
         in markdown
     )
-    assert (
-        "- Dernière commande Git observée : add resume block — push"
-        in markdown
-    )
+    assert "Dernière commande Git observée" not in markdown
     assert '<a class="nav-main" href="#reprise">Reprise</a>' in html
     assert '<section class="resume" id="reprise"><h2>Reprise</h2>' in html
     resume_html = html.split('<section class="resume"', 1)[1].split(
         "</section>", 1
     )[0]
-    assert resume_html.count("<dt>") == 6
+    assert resume_html.count("<dt>") == 5
     assert (
         "<dt>État</dt><dd>activité en cours, test non relancé</dd>"
         in resume_html
@@ -651,12 +648,15 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
     for activity in activities:
         store.append(activity)
 
-    monkeypatch.setattr(
-        "daemon_v2.daily_trace.subprocess.run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            stdout="", returncode=0
-        ),
-    )
+    def fake_run(command, **_kwargs):
+        stdout = (
+            "## main\n"
+            if "status" in command
+            else "2026-07-03T10:02:00+00:00\0pushed changes\n"
+        )
+        return SimpleNamespace(stdout=stdout, returncode=0)
+
+    monkeypatch.setattr("daemon_v2.daily_trace.subprocess.run", fake_run)
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
@@ -666,26 +666,33 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
         "les modifications"
         in markdown
     )
-    assert "- État Git local : propre" in markdown
-    assert "- Dernier test local observé : make test — OK" in markdown
     assert (
-        "- Dernière commande Git observée : pushed changes — push"
-        in markdown
-    )
+        "### Git\n"
+        "- État local : propre\n"
+        "- Branche : main\n"
+        "- Dernier commit : pushed changes\n"
+        "- Commits aujourd’hui :\n"
+        "  - pushed changes"
+    ) in markdown
+    assert "- Dernier test local observé : make test — OK" in markdown
+    assert "Dernière commande Git observée" not in markdown
     assert (
         "<dt>État</dt><dd>"
         "push observé, aucun test local observé depuis les modifications</dd>"
     ) in html
-    assert "<dt>État Git local</dt><dd>propre</dd>" in html
+    assert (
+        '<div class="resume-git"><h3>Git</h3><dl>'
+        "<dt>État local</dt><dd>propre</dd>"
+        "<dt>Branche</dt><dd>main</dd>"
+        "<dt>Dernier commit</dt><dd>pushed changes</dd>"
+        "<dt>Commits aujourd’hui</dt><dd><ul>"
+        "<li>pushed changes</li></ul></dd></dl></div>"
+    ) in html
     assert (
         "<dt>Dernier test local observé</dt><dd>make test — OK</dd>"
         in html
     )
-    assert (
-        "<dt>Dernière commande Git observée</dt>"
-        "<dd>pushed changes — push</dd>"
-        in html
-    )
+    assert "<dt>Dernière commande Git observée</dt>" not in html
 
 
 def test_pulse_inspection_commands_stay_raw_but_not_useful(tmp_path):
@@ -1063,7 +1070,14 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     )
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     status_result = {"stdout": "## main\n", "returncode": 0}
-    log_result = {"stdout": "passive local commit\n", "returncode": 0}
+    log_result = {
+        "stdout": (
+            "2026-07-03T17:59:00+00:00\0passive local commit\n"
+            "2026-07-03T12:00:00+00:00\0earlier local commit\n"
+            "2026-07-02T16:00:00+00:00\0older commit\n"
+        ),
+        "returncode": 0,
+    }
     calls = []
 
     def fake_run(command, **kwargs):
@@ -1075,16 +1089,27 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
 
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
-    assert "- État Git local : propre" in markdown
-    assert "- Branche Git : main" in markdown
-    assert "- Dernier commit local : passive local commit" in markdown
-    assert "Dernière commande Git observée" not in markdown
-    assert "<dt>État Git local</dt><dd>propre</dd>" in html
-    assert "<dt>Branche Git</dt><dd>main</dd>" in html
     assert (
-        "<dt>Dernier commit local</dt><dd>passive local commit</dd>"
+        "### Git\n"
+        "- État local : propre\n"
+        "- Branche : main\n"
+        "- Dernier commit : passive local commit\n"
+        "- Commits aujourd’hui :\n"
+        "  - passive local commit\n"
+        "  - earlier local commit"
+    ) in markdown
+    assert "Dernière commande Git observée" not in markdown
+    assert "<dt>État local</dt><dd>propre</dd>" in html
+    assert "<dt>Branche</dt><dd>main</dd>" in html
+    assert (
+        "<dt>Dernier commit</dt><dd>passive local commit</dd>"
         in html
     )
+    assert (
+        "<dt>Commits aujourd’hui</dt><dd><ul>"
+        "<li>passive local commit</li><li>earlier local commit</li>"
+        "</ul></dd>"
+    ) in html
     assert "<dt>Dernière commande Git observée</dt>" not in html
     assert trace["activity_count"] == 1
 
@@ -1095,19 +1120,19 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     expected = (
-        "État Git local : 1 fichier modifié, 1 fichier non suivi, "
+        "État local : 1 fichier modifié, 1 fichier non suivi, "
         "1 fichier supprimé"
     )
     assert f"- {expected}" in markdown
     assert (
-        "<dt>État Git local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
+        "<dt>État local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
         "1 fichier supprimé</dd>"
     ) in html
-    assert "- Branche Git : feature/passive-git" in markdown
+    assert "- Branche : feature/passive-git" in markdown
 
     status_result["returncode"] = 128
-    assert "État Git local :" not in render_daily_trace_markdown(trace)
-    assert "<dt>État Git local</dt>" not in render_daily_trace_html(trace)
+    assert "### Git" not in render_daily_trace_markdown(trace)
+    assert '<div class="resume-git">' not in render_daily_trace_html(trace)
     assert calls
     command, kwargs = calls[0]
     assert command == [
@@ -1125,8 +1150,8 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
             "-C",
             str(workspace),
             "log",
-            "-1",
-            "--pretty=%s",
+            "-5",
+            "--pretty=%cI%x00%s",
         ]
         and kwargs["timeout"] == 1
         for command, kwargs in calls

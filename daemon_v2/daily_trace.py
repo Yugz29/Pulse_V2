@@ -22,6 +22,8 @@ from .trace_store import TraceStore
 
 TERMINAL_LABEL_ORDER = ("test", "git", "pulse", "erreur")
 SummaryFact = str | tuple[str, list[str]]
+ResumeGroup = tuple[str, list[tuple[str, str | list[str]]]]
+ResumeFact = str | ResumeGroup
 
 
 def _file_summary_fact(
@@ -420,7 +422,10 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _git_local_snapshot(workspace: str) -> dict[str, str] | None:
+def _git_local_snapshot(
+    workspace: str,
+    day: str,
+) -> dict[str, str | list[str]] | None:
     if not Path(workspace).is_dir():
         return None
     try:
@@ -474,7 +479,7 @@ def _git_local_snapshot(workspace: str) -> dict[str, str] | None:
         snapshot["branch"] = branch
     try:
         log_result = subprocess.run(
-            ["git", "-C", workspace, "log", "-1", "--pretty=%s"],
+            ["git", "-C", workspace, "log", "-5", "--pretty=%cI%x00%s"],
             capture_output=True,
             text=True,
             timeout=1,
@@ -482,16 +487,28 @@ def _git_local_snapshot(workspace: str) -> dict[str, str] | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return snapshot
-    commit_message = log_result.stdout.strip()
-    if log_result.returncode == 0 and commit_message:
-        snapshot["commit"] = commit_message.splitlines()[0]
+    if log_result.returncode == 0:
+        commits = []
+        commits_today = []
+        for line in log_result.stdout.splitlines():
+            committed_at, separator, message = line.partition("\0")
+            if not separator or not message:
+                continue
+            if message not in commits:
+                commits.append(message)
+            if committed_at[:10] == day and message not in commits_today:
+                commits_today.append(message)
+        if commits:
+            snapshot["commit"] = commits[0]
+        if commits_today:
+            snapshot["commits_today"] = commits_today[:5]
     return snapshot
 
 
-def build_resume(trace: dict[str, Any]) -> list[str]:
+def build_resume(trace: dict[str, Any]) -> list[ResumeFact]:
     current = build_current_state(trace)
     git_snapshot = (
-        _git_local_snapshot(current["workspace"])
+        _git_local_snapshot(current["workspace"], trace["date"])
         if current["workspace"] != "Non détecté"
         else None
     )
@@ -592,15 +609,24 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
         elif commit_pushed:
             state_parts.append("dernier commit poussé")
 
-    facts = []
+    facts: list[ResumeFact] = []
     if state_parts:
         facts.append(f"État : {', '.join(state_parts)}")
-    if git_local:
-        facts.append(f"État Git local : {git_local}")
-    if git_snapshot and git_snapshot.get("branch"):
-        facts.append(f"Branche Git : {git_snapshot['branch']}")
-    if git_snapshot and git_snapshot.get("commit"):
-        facts.append(f"Dernier commit local : {git_snapshot['commit']}")
+    git_group = None
+    if git_snapshot:
+        git_rows: list[tuple[str, str | list[str]]] = [
+            ("État local", str(git_snapshot["status"]))
+        ]
+        if git_snapshot.get("branch"):
+            git_rows.append(("Branche", str(git_snapshot["branch"])))
+        if git_snapshot.get("commit"):
+            git_rows.append(
+                ("Dernier commit", str(git_snapshot["commit"]))
+            )
+        commits_today = git_snapshot.get("commits_today")
+        if isinstance(commits_today, list) and commits_today:
+            git_rows.append(("Commits aujourd’hui", commits_today))
+        git_group = ("Git", git_rows)
     if current["project"] != "Non détecté":
         facts.append(f"Dernier projet observé : {current['project']}")
     if current["last_activity_type"]:
@@ -616,29 +642,22 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
         )
     if last_test:
         facts.append(f"Dernier test local observé : {last_test}")
-    if last_commit or last_push_at:
-        git_value = last_commit or "push"
-        if (
-            last_commit
-            and last_commit_at
-            and last_push_at
-            and last_push_at >= last_commit_at
-        ):
-            git_value = f"{last_commit} — push"
-        facts.append(f"Dernière commande Git observée : {git_value}")
     if show_error:
         if len(facts) >= 9:
             files_index = next(
                 (
                     index
                     for index, fact in enumerate(facts)
-                    if fact.startswith("Derniers fichiers observés :")
+                    if isinstance(fact, str)
+                    and fact.startswith("Derniers fichiers observés :")
                 ),
                 None,
             )
             if files_index is not None:
                 facts.pop(files_index)
         facts.append(f"Erreur terminal récente : {last_error}")
+    if git_group:
+        facts.append(git_group)
     return facts[:9]
 
 
