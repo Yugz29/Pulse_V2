@@ -210,6 +210,17 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
                 "cwd": "/project/Pulse_V2",
             },
         ),
+        Activity(
+            "terminal_finished",
+            newest_at + timedelta(minutes=28),
+            "terminal",
+            "Command failed (1): false",
+            {
+                "command": "false",
+                "exit_code": 1,
+                "cwd": "/unqualified",
+            },
+        ),
     ]
     for activity in activities:
         store.append(activity)
@@ -221,13 +232,34 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
         "days": [
             {
                 "date": "2026-07-04",
-                "event_count": 6,
+                "event_count": 7,
                 "session_count": 1,
                 "projects": ["Pulse_V2", "Pulse_Sandbox"],
                 "summary": [
                     "Pulse_V2, Pulse_Sandbox — 1 commit · 2 fichiers touchés "
                     "(1 créé, 1 modifié) · dossiers principaux : racine",
-                    "Tests OK · Git : commit + push · 6 événements",
+                    "Tests OK · Git : commit + push · Erreurs observées · "
+                    "7 événements",
+                ],
+                "project_summaries": [
+                    {
+                        "project": "Pulse_V2",
+                        "workspace": "/project/Pulse_V2",
+                        "event_count": 5,
+                        "summary": [
+                            "1 commit · 1 fichier modifié · "
+                            "dossiers principaux : racine",
+                            "Tests OK · Git : commit + push",
+                        ],
+                    },
+                    {
+                        "project": "Pulse_Sandbox",
+                        "workspace": "/project/Pulse_Sandbox",
+                        "event_count": 1,
+                        "summary": [
+                            "1 fichier créé · dossiers principaux : racine"
+                        ],
+                    },
                 ],
             },
             {
@@ -238,6 +270,16 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
                 "summary": [
                     "Legacy — 1 fichier modifié · dossiers principaux : racine",
                     "1 événement",
+                ],
+                "project_summaries": [
+                    {
+                        "project": "Legacy",
+                        "workspace": "/project/Legacy",
+                        "event_count": 1,
+                        "summary": [
+                            "1 fichier modifié · dossiers principaux : racine"
+                        ],
+                    }
                 ],
             },
         ]
@@ -251,23 +293,24 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     assert html.index("<h2>2026-07-04</h2>") < html.index(
         "<h2>2026-07-03</h2>"
     )
-    assert "6 événements · 1 session" in html
+    assert "7 événements · 1 session" in html
     assert "Projets : Pulse_V2, Pulse_Sandbox" in html
-    assert (
-        "Pulse_V2, Pulse_Sandbox — 1 commit · 2 fichiers touchés "
-        "(1 créé, 1 modifié) · dossiers principaux : racine"
-    ) in html
-    assert "Tests OK · Git : commit + push · 6 événements" in html
     assert "curl -s http://localhost/status" not in html
     assert "pytest tests_v2" not in html
-    assert '<div class="day-summary">' in html
+    assert '<div class="day-project-summaries">' in html
     assert (
-        '<p class="day-summary-primary">Pulse_V2, Pulse_Sandbox'
-        in html
-    )
+        '<section class="day-project-summary"><h3>Pulse_V2</h3>'
+        '<p class="day-project-summary-primary">1 commit · '
+        "1 fichier modifié · dossiers principaux : racine</p>"
+    ) in html
     assert (
-        '<p class="day-summary-secondary">'
-        "Tests OK · Git : commit + push · 6 événements</p>"
+        '<p class="day-project-summary-secondary">'
+        "Tests OK · Git : commit + push</p>"
+    ) in html
+    assert (
+        '<section class="day-project-summary"><h3>Pulse_Sandbox</h3>'
+        '<p class="day-project-summary-primary">1 fichier créé · '
+        "dossiers principaux : racine</p>"
     ) in html
     assert 'href="/day/2026-07-04">HTML</a>' in html
     assert 'href="/trace/2026-07-04">JSON</a>' in html
@@ -294,6 +337,7 @@ def test_trace_days_uses_neutral_summary_for_app_only_day(tmp_path):
         "Activité locale — activité enregistrée",
         "1 événement",
     ]
+    assert response.get_json()["days"][0]["project_summaries"] == []
     assert (
         '<p class="day-summary-primary">'
         "Activité locale — activité enregistrée</p>"

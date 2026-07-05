@@ -667,6 +667,30 @@ def build_available_days(
         projects = [
             Path(workspace).name for workspace in summary["workspaces"]
         ]
+        activities = [
+            activity
+            for session in trace["sessions"]
+            for activity in session["activities"]
+        ]
+        project_summaries = []
+        for workspace in summary["workspaces"]:
+            project_activities = [
+                activity
+                for activity in activities
+                if _activity_workspace(activity) == workspace
+            ]
+            if project_activities:
+                project_summaries.append(
+                    {
+                        "project": Path(workspace).name,
+                        "workspace": workspace,
+                        "event_count": len(project_activities),
+                        "summary": _build_compact_activity_summary(
+                            project_activities,
+                            include_event_count=False,
+                        ),
+                    }
+                )
         days.append(
             {
                 "date": day.isoformat(),
@@ -674,6 +698,7 @@ def build_available_days(
                 "session_count": summary["session_count"],
                 "projects": projects,
                 "summary": _build_short_day_summary(trace, projects),
+                "project_summaries": project_summaries,
             }
         )
     return {"days": days}
@@ -683,10 +708,33 @@ def _build_short_day_summary(
     trace: dict[str, Any],
     projects: list[str],
 ) -> list[str]:
+    activities = [
+        activity
+        for session in trace["sessions"]
+        for activity in session["activities"]
+    ]
+    prefix = ", ".join(projects) if projects else "Activité locale"
+    summary = _build_compact_activity_summary(
+        activities,
+        include_event_count=True,
+    )
+    primary = f"{prefix} — {summary[0]}"
+    summary[0] = (
+        primary
+        if len(primary) <= 160
+        else f"{primary[:159].rstrip()}…"
+    )
+    return summary
+
+
+def _build_compact_activity_summary(
+    activities: list[dict[str, Any]],
+    *,
+    include_event_count: bool,
+) -> list[str]:
     def shorten(value: str, limit: int = 160) -> str:
         return value if len(value) <= limit else f"{value[:limit - 1].rstrip()}…"
 
-    prefix = ", ".join(projects) if projects else "Activité locale"
     file_paths = {"created": set(), "modified": set(), "deleted": set()}
     folder_counts: dict[str, int] = {}
     folder_order: list[str] = []
@@ -696,53 +744,52 @@ def _build_short_day_summary(
     failed_test = False
     saw_error = False
 
-    for session in trace["sessions"]:
-        for activity in session["activities"]:
-            details = activity.get("details", {})
-            if activity["type"] == "file_changed":
-                event = details.get("event", details.get("change"))
-                path = details.get("path")
-                if event in file_paths and path:
-                    file_paths[event].add(path)
-                    display_path = Path(
-                        _display_file_path(path, details.get("workspace"))
-                    )
-                    folder = (
-                        display_path.parts[0]
-                        if not display_path.is_absolute()
-                        and len(display_path.parts) > 1
-                        else "racine"
-                    )
-                    if folder not in folder_counts:
-                        folder_counts[folder] = 0
-                        folder_order.append(folder)
-                    folder_counts[folder] += 1
-                continue
+    for activity in activities:
+        details = activity.get("details", {})
+        if activity["type"] == "file_changed":
+            event = details.get("event", details.get("change"))
+            path = details.get("path")
+            if event in file_paths and path:
+                file_paths[event].add(path)
+                display_path = Path(
+                    _display_file_path(path, details.get("workspace"))
+                )
+                folder = (
+                    display_path.parts[0]
+                    if not display_path.is_absolute()
+                    and len(display_path.parts) > 1
+                    else "racine"
+                )
+                if folder not in folder_counts:
+                    folder_counts[folder] = 0
+                    folder_order.append(folder)
+                folder_counts[folder] += 1
+            continue
 
-            if activity["type"] != "terminal_finished":
-                continue
-            command = details.get("command")
-            command_lines = (
-                [line.strip() for line in command.splitlines() if line.strip()]
-                if isinstance(command, str)
-                else []
-            )
-            exit_code = details.get("exit_code")
-            test_lines = [line for line in command_lines if _is_test_command(line)]
-            if test_lines:
-                saw_test = True
-                failed_test = failed_test or exit_code != 0
-            if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-                saw_error = saw_error or exit_code != 0
-            for line in command_lines:
-                try:
-                    parts = shlex.split(line)
-                except ValueError:
-                    parts = line.split()
-                if parts[:2] == ["git", "commit"]:
-                    commit_count += 1
-                elif parts[:2] == ["git", "push"]:
-                    saw_push = True
+        if activity["type"] != "terminal_finished":
+            continue
+        command = details.get("command")
+        command_lines = (
+            [line.strip() for line in command.splitlines() if line.strip()]
+            if isinstance(command, str)
+            else []
+        )
+        exit_code = details.get("exit_code")
+        test_lines = [line for line in command_lines if _is_test_command(line)]
+        if test_lines:
+            saw_test = True
+            failed_test = failed_test or exit_code != 0
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            saw_error = saw_error or exit_code != 0
+        for line in command_lines:
+            try:
+                parts = shlex.split(line)
+            except ValueError:
+                parts = line.split()
+            if parts[:2] == ["git", "commit"]:
+                commit_count += 1
+            elif parts[:2] == ["git", "push"]:
+                saw_push = True
 
     primary_facts = []
     if commit_count:
@@ -800,16 +847,17 @@ def _build_short_day_summary(
         secondary.append("Git : push")
     if saw_error:
         secondary.append("Erreurs observées")
-    activity_count = trace["activity_count"]
-    secondary.append(
-        f"{activity_count} "
-        f"{'événement' if activity_count == 1 else 'événements'}"
-    )
+    if include_event_count:
+        activity_count = len(activities)
+        secondary.append(
+            f"{activity_count} "
+            f"{'événement' if activity_count == 1 else 'événements'}"
+        )
 
-    return [
-        shorten(f"{prefix} — {' · '.join(primary_facts)}"),
-        shorten(" · ".join(secondary)),
-    ]
+    lines = [shorten(" · ".join(primary_facts))]
+    if secondary:
+        lines.append(shorten(" · ".join(secondary)))
+    return lines
 
 
 def render_available_days_html(

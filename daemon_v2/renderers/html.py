@@ -444,24 +444,43 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
 def render_available_days_html(
     available_days: dict[str, list[dict[str, Any]]],
 ) -> str:
+    def render_summary_lines(lines: list[str], class_name: str) -> str:
+        primary = (
+            f'<p class="{class_name}-primary">{escape(lines[0])}</p>'
+        )
+        secondary = (
+            f'<p class="{class_name}-secondary">{escape(lines[1])}</p>'
+            if len(lines) > 1
+            else ""
+        )
+        return primary + secondary
+
     day_cards = []
     for item in available_days["days"]:
         day = escape(item["date"])
         event_count = item["event_count"]
         session_count = item["session_count"]
         projects = ", ".join(escape(project) for project in item["projects"])
-        summary_lines = item["summary"]
-        summary = (
-            '<div class="day-summary">'
-            f'<p class="day-summary-primary">{escape(summary_lines[0])}</p>'
-            + (
-                '<p class="day-summary-secondary">'
-                f"{escape(summary_lines[1])}</p>"
-                if len(summary_lines) > 1
-                else ""
+        if len(item["project_summaries"]) > 1:
+            project_blocks = "".join(
+                '<section class="day-project-summary">'
+                f"<h3>{escape(project['project'])}</h3>"
+                + render_summary_lines(
+                    project["summary"], "day-project-summary"
+                )
+                + "</section>"
+                for project in item["project_summaries"]
             )
-            + "</div>"
-        )
+            summary = (
+                '<div class="day-project-summaries">'
+                f"{project_blocks}</div>"
+            )
+        else:
+            summary = (
+                '<div class="day-summary">'
+                + render_summary_lines(item["summary"], "day-summary")
+                + "</div>"
+            )
         day_cards.append(
             '<article class="day">'
             f"<h2>{day}</h2>"
@@ -492,6 +511,12 @@ border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem}
 .day-summary{max-width:62ch;margin:.8rem 0 .7rem;padding-left:.8rem;
 border-left:2px solid #3a4652}.day .day-summary-primary{color:var(--text);margin:0;
 line-height:1.45}.day .day-summary-secondary{color:#9da8b5;margin:.3rem 0 0;
+font-size:.92rem;line-height:1.4}
+.day-project-summaries{max-width:62ch;margin:.8rem 0 .7rem;display:grid;gap:.75rem}
+.day-project-summary{padding-left:.8rem;border-left:2px solid #3a4652}
+.day-project-summary h3{margin:0 0 .15rem;color:#dce4ed;font-size:.98rem}
+.day .day-project-summary-primary{color:var(--text);margin:0;line-height:1.45}
+.day .day-project-summary-secondary{color:#9da8b5;margin:.3rem 0 0;
 font-size:.92rem;line-height:1.4}
 .day h2{margin:0 0 .35rem;font-size:1.15rem;color:#e4eaf1}.day nav{margin-top:.65rem}
 a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
