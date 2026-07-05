@@ -484,7 +484,7 @@ def test_status_reports_local_paths_and_today_activity(tmp_path):
     assert status["terminal_watcher"].startswith("external")
 
 
-def test_ignored_terminal_command_is_not_stored(tmp_path):
+def test_pulse_inspection_command_is_stored_as_raw_timeline_event(tmp_path):
     app = create_app(tmp_path / "trace.db")
     client = app.test_client()
 
@@ -498,8 +498,11 @@ def test_ignored_terminal_command_is_not_stored(tmp_path):
         },
     )
 
-    assert response.status_code == 204
-    assert client.get("/trace/today").get_json()["activity_count"] == 0
+    assert response.status_code == 201
+    assert client.get("/trace/today").get_json()["activity_count"] == 1
+    markdown = client.get("/trace/today.md").get_data(as_text=True)
+    assert "curl http://127.0.0.1:5000/trace/today.md" in markdown
+    assert "Dernier signal utile observé" not in markdown
 
 
 def test_clear_returns_204_and_is_not_stored(tmp_path):
@@ -524,7 +527,7 @@ def test_clear_returns_204_and_is_not_stored(tmp_path):
     assert activity_count == 0
 
 
-def test_multiline_clear_and_trace_curl_returns_204_and_is_not_stored(tmp_path):
+def test_multiline_clear_is_removed_but_trace_curl_is_stored(tmp_path):
     database_path = tmp_path / "trace.db"
     app = create_app(database_path)
 
@@ -538,12 +541,14 @@ def test_multiline_clear_and_trace_curl_returns_204_and_is_not_stored(tmp_path):
         },
     )
 
-    assert response.status_code == 204
+    assert response.status_code == 201
     with sqlite3.connect(database_path) as connection:
-        activity_count = connection.execute(
-            "SELECT COUNT(*) FROM activities"
-        ).fetchone()[0]
-    assert activity_count == 0
+        rows = connection.execute(
+            "SELECT details_json FROM activities"
+        ).fetchall()
+    assert len(rows) == 1
+    assert "clear" not in rows[0][0]
+    assert "curl http://127.0.0.1:5000/trace/today.md" in rows[0][0]
 
 
 def test_multiline_activities_curl_returns_204_and_is_not_stored(tmp_path):

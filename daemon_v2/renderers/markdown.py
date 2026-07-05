@@ -140,6 +140,14 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
                     + _markdown_summary_facts(session_facts)
                     + [""]
                 )
+            elif not _app_activation_counts(session):
+                lines.extend(
+                    [
+                        "### Résumé de session",
+                        "_Aucun signal significatif dans cette session._",
+                        "",
+                    ]
+                )
 
         file_change_groups = _file_change_groups(session)
         app_activation_counts = _app_activation_counts(session)

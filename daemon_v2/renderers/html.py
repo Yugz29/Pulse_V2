@@ -310,6 +310,11 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                 '<div class="session-summary"><h3>Résumé de session</h3>'
                 f"{summary_html}</div>"
             )
+        elif not _app_activation_counts(session):
+            body.append(
+                '<div class="session-summary"><h3>Résumé de session</h3>'
+                "<p>Aucun signal significatif dans cette session.</p></div>"
+            )
         body.append('<ul class="timeline">')
         file_change_groups = _file_change_groups(session)
         app_activation_counts = _app_activation_counts(session)

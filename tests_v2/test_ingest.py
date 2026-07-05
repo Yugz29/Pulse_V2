@@ -67,9 +67,6 @@ def test_normalizes_file_changed_activity(event):
         "",
         "   ",
         "source ~/.zshrc",
-        "curl http://127.0.0.1:5000/trace/today",
-        "curl http://127.0.0.1:5000/trace/today.md",
-        "  curl   http://127.0.0.1:5000/trace/today.md  ",
     ],
 )
 def test_ignores_noisy_terminal_commands(command):
@@ -82,6 +79,27 @@ def test_ignores_noisy_terminal_commands(command):
                 "cwd": "/project",
             }
         )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "curl http://127.0.0.1:5000/trace/today",
+        "curl http://127.0.0.1:5000/trace/today.md",
+        "curl -s http://127.0.0.1:5000/trace/days | python -m json.tool",
+    ],
+)
+def test_keeps_pulse_inspection_commands_in_raw_activity(command):
+    activity = normalize_activity(
+        {
+            "type": "terminal_finished",
+            "command": command,
+            "exit_code": 0,
+            "cwd": "/project",
+        }
+    )
+
+    assert activity.details["command"] == command
 
 
 def test_removes_ignored_lines_from_multiline_command():

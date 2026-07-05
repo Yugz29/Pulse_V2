@@ -3,6 +3,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from daemon_v2.daily_trace import (
+    _is_pulse_inspection_command,
+    build_available_days,
     build_current_state,
     build_daily_trace,
     render_daily_trace_html,
@@ -10,6 +12,27 @@ from daemon_v2.daily_trace import (
 )
 from daemon_v2.models import Activity
 from daemon_v2.trace_store import TraceStore
+
+
+def test_classifies_only_local_pulse_inspection_commands():
+    commands = [
+        "curl -s http://127.0.0.1:5000/",
+        "curl http://127.0.0.1:5000/trace/today",
+        "curl http://127.0.0.1:5000/trace/today.md | head",
+        "curl http://127.0.0.1:5000/trace/days | python -m json.tool",
+        "curl http://127.0.0.1:5000/trace/2026-07-05",
+        "curl http://127.0.0.1:5000/trace/2026-07-05.md | rg Session",
+        "curl http://127.0.0.1:5000/days",
+        "curl http://127.0.0.1:5000/day/2026-07-05 | sed -n 1,20p",
+    ]
+
+    assert all(_is_pulse_inspection_command(command) for command in commands)
+    assert not _is_pulse_inspection_command(
+        "curl -X POST http://127.0.0.1:5000/activities"
+    )
+    assert not _is_pulse_inspection_command(
+        "curl https://example.com/trace/today"
+    )
 
 
 def test_builds_structured_daily_trace(tmp_path):
@@ -628,6 +651,140 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
         "<dd>pushed changes — push</dd>"
         in html
     )
+
+
+def test_pulse_inspection_commands_stay_raw_but_not_useful(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 10, 0, tzinfo=timezone.utc)
+    workspace = "/project/Pulse"
+    inspections = [
+        (
+            "curl -s http://127.0.0.1:5000/trace/today.md "
+            "| .venv/bin/python -m pytest"
+        ),
+        (
+            "curl -s http://127.0.0.1:5000/trace/days "
+            "| python -m json.tool"
+        ),
+        (
+            "curl -s http://127.0.0.1:5000/day/2026-07-03 "
+            "| rg Session"
+        ),
+    ]
+    store.append(
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Modified {workspace}/src/app.py",
+            {
+                "path": f"{workspace}/src/app.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        )
+    )
+    for index, command in enumerate(inspections, start=1):
+        store.append(
+            Activity(
+                "terminal_finished",
+                first_at + timedelta(minutes=index),
+                "terminal",
+                f"Command failed (1): {command}",
+                {
+                    "command": command,
+                    "exit_code": 1,
+                    "cwd": workspace,
+                },
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    available_day = build_available_days(
+        store, timezone.utc
+    )["days"][0]
+
+    for command in inspections:
+        assert command in markdown
+    assert (
+        "- Dernier signal utile observé : file\\_changed — "
+        "Modified src/app.py"
+    ) in markdown
+    assert "Dernier test local observé" not in markdown
+    assert "Tests passés :" not in markdown
+    assert "Tests échoués :" not in markdown
+    assert "Erreurs terminal :" not in markdown
+    assert "Erreur terminal récente" not in markdown
+    assert available_day["summary"] == [
+        "Pulse — 1 fichier modifié · dossiers principaux : src",
+        "4 événements",
+    ]
+    assert available_day["project_summaries"][0]["summary"] == [
+        "1 fichier modifié · dossiers principaux : src"
+    ]
+
+
+def test_inspection_only_sessions_hide_empty_project_summaries(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc)
+    workspace = "/project/Pulse"
+    with_apps = "curl -s http://127.0.0.1:5000/trace/today.md"
+    without_apps = "curl -s http://127.0.0.1:5000/trace/days"
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Modified {workspace}/src/app.py",
+            {
+                "path": f"{workspace}/src/app.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(hours=1),
+            "terminal",
+            f"Command succeeded: {with_apps}",
+            {"command": with_apps, "exit_code": 0, "cwd": workspace},
+        ),
+        Activity(
+            "app_activated",
+            first_at + timedelta(hours=1, minutes=1),
+            "application",
+            "Activated Code",
+            {"app": "Code"},
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(hours=2),
+            "terminal",
+            f"Command succeeded: {without_apps}",
+            {"command": without_apps, "exit_code": 0, "cwd": workspace},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert trace["session_count"] == 3
+    assert markdown.count("#### Pulse") == 1
+    assert html.count("<h4>Pulse</h4>") == 1
+    assert "- Apps actives : Code" in markdown
+    assert "Apps actives : Code" in html
+    assert markdown.count(
+        "_Aucun signal significatif dans cette session._"
+    ) == 1
+    assert html.count(
+        "<p>Aucun signal significatif dans cette session.</p>"
+    ) == 1
+    assert with_apps in markdown
+    assert without_apps in markdown
 
 
 def test_resume_reports_latest_terminal_error(tmp_path):

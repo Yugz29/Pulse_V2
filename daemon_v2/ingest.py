@@ -16,8 +16,6 @@ _ENV_SECRET = re.compile(
 )
 _IGNORED_TERMINAL_COMMANDS = {
     "clear",
-    "curl http://127.0.0.1:5000/trace/today",
-    "curl http://127.0.0.1:5000/trace/today.md",
     "source ~/.zshrc",
 }
 

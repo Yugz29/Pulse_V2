@@ -3,9 +3,11 @@
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
+import re
 import shlex
 import subprocess
 from typing import Any
+from urllib.parse import urlsplit
 
 from .analysis.timeline import (
     IGNORED_APP_NAMES_FOR_RENDERING,
@@ -60,7 +62,11 @@ def build_session_summary(
     for activity in session["activities"]:
         details = activity.get("details", {})
         workspace = _activity_workspace(activity)
-        if workspace in project_workspaces:
+        workspace_is_useful = (
+            activity["type"] != "terminal_finished"
+            or bool(_useful_command_lines(details.get("command")))
+        )
+        if workspace_is_useful and workspace in project_workspaces:
             project = Path(workspace).name
             if not project_sequence or project_sequence[-1] != project:
                 project_sequence.append(project)
@@ -83,11 +89,7 @@ def build_session_summary(
         if activity["type"] != "terminal_finished":
             continue
         command = details.get("command")
-        command_lines = (
-            [line.strip() for line in command.splitlines() if line.strip()]
-            if isinstance(command, str)
-            else []
-        )
+        command_lines = _useful_command_lines(command)
         labels = _terminal_labels(activity)
         exit_code = details.get("exit_code")
         if "test" in labels:
@@ -175,7 +177,8 @@ def _session_project_summaries(
             {workspace},
             include_projects=False,
         )
-        summaries.append((Path(workspace).name, facts))
+        if facts:
+            summaries.append((Path(workspace).name, facts))
     return summaries
 
 
@@ -193,14 +196,55 @@ def _is_test_command(line: str) -> bool:
     )
 
 
+def _is_pulse_inspection_command(line: str) -> bool:
+    try:
+        parts = shlex.split(line)
+    except ValueError:
+        parts = line.split()
+    if not parts or Path(parts[0]).name != "curl":
+        return False
+
+    match = re.search(r"https?://[^\s|\"']+", line)
+    if not match:
+        return False
+    parsed = urlsplit(match.group(0))
+    try:
+        is_local_pulse = (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname == "127.0.0.1"
+            and parsed.port == 5000
+        )
+    except ValueError:
+        return False
+    if not is_local_pulse:
+        return False
+
+    path = parsed.path or "/"
+    return (
+        path in {"/", "/days", "/trace/today", "/trace/today.md", "/trace/days"}
+        or bool(re.fullmatch(r"/trace/\d{4}-\d{2}-\d{2}(?:\.md)?", path))
+        or bool(re.fullmatch(r"/day/\d{4}-\d{2}-\d{2}", path))
+    )
+
+
+def _useful_command_lines(command: Any) -> list[str]:
+    if not isinstance(command, str):
+        return []
+    return [
+        line.strip()
+        for line in command.splitlines()
+        if line.strip() and not _is_pulse_inspection_command(line.strip())
+    ]
+
+
 def _terminal_labels(activity: dict[str, Any]) -> list[str]:
     details = activity.get("details", {})
     command = details.get("command")
-    command_lines = (
-        [" ".join(line.split()) for line in command.splitlines() if line.strip()]
-        if isinstance(command, str)
-        else []
-    )
+    command_lines = [
+        " ".join(line.split()) for line in _useful_command_lines(command)
+    ]
+    if not command_lines:
+        return []
     labels: set[str] = set()
     for line in command_lines:
         if _is_test_command(line):
@@ -229,11 +273,7 @@ def _terminal_labels(activity: dict[str, Any]) -> list[str]:
 def _useful_activity_description(activity: dict[str, Any]) -> str:
     details = activity.get("details", {})
     if activity["type"] == "terminal_finished":
-        command_lines = [
-            line.strip()
-            for line in str(details.get("command", "")).splitlines()
-            if line.strip()
-        ]
+        command_lines = _useful_command_lines(details.get("command"))
         return command_lines[-1] if command_lines else activity["summary"]
     if activity["type"] == "file_changed":
         event = details.get("event", details.get("change", "changed"))
@@ -281,10 +321,18 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
                 if app and app not in IGNORED_APP_NAMES_FOR_RENDERING:
                     last_app = app
             else:
-                last_useful_activity = activity
-                activity_workspace = _activity_workspace(activity)
-                if activity_workspace and not _is_weak_workspace(activity_workspace):
-                    workspace = activity_workspace
+                useful_activity = (
+                    activity["type"] != "terminal_finished"
+                    or bool(_useful_command_lines(details.get("command")))
+                )
+                if useful_activity:
+                    last_useful_activity = activity
+                    activity_workspace = _activity_workspace(activity)
+                    if (
+                        activity_workspace
+                        and not _is_weak_workspace(activity_workspace)
+                    ):
+                        workspace = activity_workspace
             if activity["type"] == "terminal_finished":
                 command_lines = [
                     line.strip()
@@ -384,11 +432,9 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
                 continue
             details = activity.get("details", {})
             command = details.get("command")
-            command_lines = (
-                [line.strip() for line in command.splitlines() if line.strip()]
-                if isinstance(command, str)
-                else []
-            )
+            command_lines = _useful_command_lines(command)
+            if not command_lines:
+                continue
             occurred_at = activity["occurred_at"]
             exit_code = details.get("exit_code")
             test_lines = [line for line in command_lines if _is_test_command(line)]
@@ -523,7 +569,11 @@ def build_daily_summary(trace: dict[str, Any]) -> dict[str, Any]:
         for activity in session["activities"]:
             details = activity.get("details", {})
             workspace = _activity_workspace(activity)
-            if workspace:
+            workspace_is_useful = (
+                activity["type"] != "terminal_finished"
+                or bool(_useful_command_lines(details.get("command")))
+            )
+            if workspace and workspace_is_useful:
                 if workspace not in workspace_counts:
                     workspace_order.append(workspace)
                     workspace_counts[workspace] = 0
@@ -780,11 +830,9 @@ def _build_compact_activity_summary(
         if activity["type"] != "terminal_finished":
             continue
         command = details.get("command")
-        command_lines = (
-            [line.strip() for line in command.splitlines() if line.strip()]
-            if isinstance(command, str)
-            else []
-        )
+        command_lines = _useful_command_lines(command)
+        if not command_lines:
+            continue
         exit_code = details.get("exit_code")
         test_lines = [line for line in command_lines if _is_test_command(line)]
         if test_lines:
