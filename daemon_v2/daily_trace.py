@@ -452,7 +452,7 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     elif files_after_successful_test:
         if changes_committed_and_pushed and git_local == "propre":
             state_parts.append(
-                "dernier commit pushé, test local non relancé"
+                "push observé, aucun test local observé depuis les modifications"
             )
         else:
             state_parts.append("activité en cours, test non relancé")
@@ -468,22 +468,22 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
     if state_parts:
         facts.append(f"État : {', '.join(state_parts)}")
     if git_local:
-        facts.append(f"Git local : {git_local}")
+        facts.append(f"État Git local : {git_local}")
     if current["project"] != "Non détecté":
-        facts.append(f"Projet courant : {current['project']}")
+        facts.append(f"Dernier projet observé : {current['project']}")
     if current["last_activity_type"]:
         facts.append(
-            "Dernière activité utile : "
+            "Dernier signal utile observé : "
             f"{current['last_activity_type']} — "
             f"{current['last_activity_description']}"
         )
     if current["recent_files"]:
         facts.append(
-            "Derniers fichiers : "
+            "Derniers fichiers observés : "
             + ", ".join(item["path"] for item in current["recent_files"][:3])
         )
     if last_test:
-        facts.append(f"Dernier test : {last_test}")
+        facts.append(f"Dernier test local observé : {last_test}")
     if last_commit or last_push_at:
         git_value = last_commit or "push"
         if (
@@ -493,14 +493,14 @@ def build_resume(trace: dict[str, Any]) -> list[str]:
             and last_push_at >= last_commit_at
         ):
             git_value = f"{last_commit} — push"
-        facts.append(f"Dernier Git : {git_value}")
+        facts.append(f"Dernière commande Git observée : {git_value}")
     if show_error:
         if len(facts) >= 7:
             files_index = next(
                 (
                     index
                     for index, fact in enumerate(facts)
-                    if fact.startswith("Derniers fichiers :")
+                    if fact.startswith("Derniers fichiers observés :")
                 ),
                 None,
             )

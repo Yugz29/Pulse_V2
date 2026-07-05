@@ -501,17 +501,24 @@ def test_renders_deterministic_resume_before_today(tmp_path):
         "## Reprise\n- État : activité en cours, test non relancé"
         in markdown
     )
-    assert "- Projet courant : Pulse\\_V2" in markdown
+    assert "- Dernier projet observé : Pulse\\_V2" in markdown
     assert (
-        "- Dernière activité utile : file\\_changed — "
+        "- Dernier signal utile observé : file\\_changed — "
         "Modified daemon\\_v2/daily\\_trace.py"
     ) in markdown
-    assert "- Derniers fichiers : daemon\\_v2/daily\\_trace.py" in markdown
     assert (
-        "- Dernier test : .venv/bin/python -m pytest tests\\_v2 — OK"
+        "- Derniers fichiers observés : daemon\\_v2/daily\\_trace.py"
         in markdown
     )
-    assert "- Dernier Git : add resume block — push" in markdown
+    assert (
+        "- Dernier test local observé : "
+        ".venv/bin/python -m pytest tests\\_v2 — OK"
+        in markdown
+    )
+    assert (
+        "- Dernière commande Git observée : add resume block — push"
+        in markdown
+    )
     assert '<a class="nav-main" href="#reprise">Reprise</a>' in html
     assert '<section class="resume" id="reprise"><h2>Reprise</h2>' in html
     resume_html = html.split('<section class="resume"', 1)[1].split(
@@ -522,7 +529,10 @@ def test_renders_deterministic_resume_before_today(tmp_path):
         "<dt>État</dt><dd>activité en cours, test non relancé</dd>"
         in resume_html
     )
-    assert "<dt>Projet courant</dt><dd>Pulse_V2</dd>" in resume_html
+    assert (
+        "<dt>Dernier projet observé</dt><dd>Pulse_V2</dd>"
+        in resume_html
+    )
     assert html.index('id="maintenant"') < html.index('id="reprise"')
     assert html.index('id="reprise"') < html.index('id="aujourdhui"')
 
@@ -594,20 +604,28 @@ def test_resume_reports_pushed_changes_with_stale_local_test(
     html = render_daily_trace_html(trace)
 
     assert (
-        "- État : dernier commit pushé, test local non relancé"
+        "- État : push observé, aucun test local observé depuis "
+        "les modifications"
         in markdown
     )
-    assert "- Git local : propre" in markdown
-    assert "- Dernier test : make test — OK" in markdown
-    assert "- Dernier Git : pushed changes — push" in markdown
+    assert "- État Git local : propre" in markdown
+    assert "- Dernier test local observé : make test — OK" in markdown
+    assert (
+        "- Dernière commande Git observée : pushed changes — push"
+        in markdown
+    )
     assert (
         "<dt>État</dt><dd>"
-        "dernier commit pushé, test local non relancé</dd>"
+        "push observé, aucun test local observé depuis les modifications</dd>"
     ) in html
-    assert "<dt>Git local</dt><dd>propre</dd>" in html
-    assert "<dt>Dernier test</dt><dd>make test — OK</dd>" in html
+    assert "<dt>État Git local</dt><dd>propre</dd>" in html
     assert (
-        "<dt>Dernier Git</dt><dd>pushed changes — push</dd>"
+        "<dt>Dernier test local observé</dt><dd>make test — OK</dd>"
+        in html
+    )
+    assert (
+        "<dt>Dernière commande Git observée</dt>"
+        "<dd>pushed changes — push</dd>"
         in html
     )
 
@@ -629,7 +647,10 @@ def test_resume_reports_latest_terminal_error(tmp_path):
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
 
-    assert "- Dernier test : pytest tests\\_v2 — Échec (1)" in markdown
+    assert (
+        "- Dernier test local observé : pytest tests\\_v2 — Échec (1)"
+        in markdown
+    )
     assert "- État : tests échoués" in markdown
     assert "- Erreur terminal récente : pytest tests\\_v2 — code 1" in markdown
     assert (
@@ -683,14 +704,18 @@ def test_resume_extracts_test_line_and_hides_older_error(tmp_path):
     html = render_daily_trace_html(trace)
 
     assert (
-        "- Dernier test : .venv/bin/python -m pytest tests\\_v2 — OK"
+        "- Dernier test local observé : "
+        ".venv/bin/python -m pytest tests\\_v2 — OK"
         in markdown
     )
     assert "- État : tests OK, dernier commit poussé" in markdown
-    assert 'Dernier test : git commit -m "validated changes"' not in markdown
+    assert (
+        'Dernier test local observé : git commit -m "validated changes"'
+        not in markdown
+    )
     assert "Erreur terminal récente" not in markdown
     assert (
-        "<dt>Dernier test</dt>"
+        "<dt>Dernier test local observé</dt>"
         "<dd>.venv/bin/python -m pytest tests_v2 — OK</dd>"
     ) in html
     assert (
@@ -771,25 +796,25 @@ def test_resume_reports_local_git_status_without_storing_it(tmp_path, monkeypatc
 
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
-    assert "- Git local : propre" in markdown
-    assert "<dt>Git local</dt><dd>propre</dd>" in html
+    assert "- État Git local : propre" in markdown
+    assert "<dt>État Git local</dt><dd>propre</dd>" in html
 
     result["stdout"] = " M changed.py\n?? new.py\nD  deleted.py\n"
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
     expected = (
-        "Git local : 1 fichier modifié, 1 fichier non suivi, "
+        "État Git local : 1 fichier modifié, 1 fichier non suivi, "
         "1 fichier supprimé"
     )
     assert f"- {expected}" in markdown
     assert (
-        "<dt>Git local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
+        "<dt>État Git local</dt><dd>1 fichier modifié, 1 fichier non suivi, "
         "1 fichier supprimé</dd>"
     ) in html
 
     result["returncode"] = 128
-    assert "Git local :" not in render_daily_trace_markdown(trace)
-    assert "<dt>Git local</dt>" not in render_daily_trace_html(trace)
+    assert "État Git local :" not in render_daily_trace_markdown(trace)
+    assert "<dt>État Git local</dt>" not in render_daily_trace_html(trace)
     assert calls
     command, kwargs = calls[0]
     assert command == [
