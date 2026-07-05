@@ -23,9 +23,48 @@ Le projet fonctionne comme un prototype produit local :
 - les watchers terminal, fichiers et application alimentent le daemon en
   best-effort.
 
+
 L’interface HTML est conservée volontairement comme interface produit vivante.
 Elle sert à stabiliser les blocs, les résumés et la navigation avant
 d’envisager une interface macOS native.
+
+## Palier 1 — Journal passif et reprise factuelle
+
+Le premier palier de Pulse V2 est stabilisé : le projet fournit un journal local
+passif capable de reconstruire une journée de travail à partir de signaux
+observés localement.
+
+Ce palier couvre :
+
+- l’observation des commandes terminal, fichiers modifiés et applications
+  actives ;
+- le stockage local append-only dans SQLite ;
+- la reconstruction de la journée en cours avec `Maintenant`, `Reprise`,
+  `Aujourd’hui` et la timeline brute ;
+- les archives multi-jours via `/days` et `/day/YYYY-MM-DD` ;
+- les résumés compacts par projet dans l’index des journées ;
+- la distinction entre timeline brute et signaux utiles.
+
+Pulse conserve les événements observés dans la timeline, mais filtre certains
+bruits dans les résumés : commandes d’inspection de Pulse, prompts collés
+accidentellement dans le terminal et workspaces génériques comme le dossier
+personnel utilisateur.
+
+À ce stade, Pulse reste factuel. Il ne produit pas encore de synthèse
+intelligente et ne cherche pas à deviner l’intention du travail. Le bloc
+`Reprise` expose uniquement des signaux observés ou déduits prudemment à partir
+de l’activité locale, comme l’état Git local, le dernier test local observé, la
+dernière commande Git observée et les derniers fichiers observés.
+
+Les prochaines limites connues de ce palier sont :
+
+- Git est encore principalement observé via les commandes terminal ;
+- les commits faits via VS Code ou un autre client Git ne sont pas encore
+  observés comme événements Git dédiés ;
+- le projet courant repose encore sur des heuristiques de workspace ;
+- Pulse ne produit pas encore de synthèse assistée par IA ;
+- l’interface HTML reste un prototype produit vivant, pas l’interface macOS
+  finale.
 
 ## Installation
 
@@ -269,6 +308,11 @@ actuelle.
 
 - Les entrées sont acceptées via l’API HTTP locale et les watchers optionnels terminal, fichiers et application.
 - Les sessions utilisent une coupure fixe après 30 minutes d’inactivité.
+- Git est encore principalement observé via les commandes terminal ; les commits
+  effectués depuis VS Code ou un autre client Git ne sont pas encore détectés
+  passivement comme événements Git dédiés.
+- Le projet courant repose encore sur des heuristiques de workspace et pourra
+  être renforcé par un contexte projet plus explicite.
 - Les commandes reçoivent un masquage basique des secrets, sans parsing shell
   avancé.
 - Les watchers fonctionnent en best-effort : une indisponibilité momentanée du
@@ -276,4 +320,6 @@ actuelle.
 - SQLite est local et mono-machine ; il n’y a pas encore de système de rétention ou de migration.
 - Les scans et agrégations SQLite restent adaptés au volume actuel ; leur coût
   devra être surveillé lorsque l’historique grandira.
+- Pulse ne produit pas encore de synthèse intelligente : les résumés restent
+  factuels et issus des signaux observés.
 - Le daemon n’a pas d’authentification, car il écoute uniquement sur `127.0.0.1`.
