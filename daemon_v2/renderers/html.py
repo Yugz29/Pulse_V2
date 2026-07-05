@@ -4,7 +4,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from ..daily_trace import (
+from ..analysis.timeline import (
     _activity_workspace,
     _app_activation_counts,
     _display_file_path,
@@ -13,6 +13,8 @@ from ..daily_trace import (
     _file_change_groups,
     _ranked_apps,
     _session_project_sequence,
+)
+from ..daily_trace import (
     _session_project_summaries,
     _terminal_labels,
     build_current_state,

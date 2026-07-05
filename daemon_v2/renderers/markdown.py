@@ -3,8 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from ..daily_trace import (
-    SummaryFact,
+from ..analysis.timeline import (
     _activity_workspace,
     _app_activation_counts,
     _display_file_path,
@@ -12,6 +11,9 @@ from ..daily_trace import (
     _displayed_sessions,
     _file_change_groups,
     _ranked_apps,
+)
+from ..daily_trace import (
+    SummaryFact,
     _session_project_summaries,
     _terminal_labels,
     build_current_state,
