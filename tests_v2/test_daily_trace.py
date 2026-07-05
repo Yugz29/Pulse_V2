@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from daemon_v2.daily_trace import (
+    _is_pasted_prompt_command,
     _is_pulse_inspection_command,
     build_available_days,
     build_current_state,
@@ -33,6 +34,30 @@ def test_classifies_only_local_pulse_inspection_commands():
     assert not _is_pulse_inspection_command(
         "curl https://example.com/trace/today"
     )
+
+
+def test_classifies_structured_pasted_prompts_conservatively():
+    prompt = (
+        "Pulse_V2 — micro-jalon de documentation\n"
+        "Contexte :\n"
+        "Les routes HTML existent et doivent rester stables.\n"
+        "Objectif :\n"
+        "Vérifier le rendu sans ajouter de nouvelle dépendance.\n"
+        "À faire :\n"
+        "Conserver les événements dans la timeline brute.\n"
+        "Validation attendue :\n"
+        "Les tests existants passent."
+    )
+
+    assert _is_pasted_prompt_command(prompt)
+    for command in (
+        "make test",
+        "python script.py",
+        "git commit -m contexte",
+        "curl http://example.com",
+        f"make test\n{prompt}",
+    ):
+        assert not _is_pasted_prompt_command(command)
 
 
 def test_builds_structured_daily_trace(tmp_path):
@@ -785,6 +810,91 @@ def test_inspection_only_sessions_hide_empty_project_summaries(tmp_path):
     ) == 1
     assert with_apps in markdown
     assert without_apps in markdown
+
+
+def test_pasted_prompt_stays_raw_without_replacing_real_terminal_error(
+    tmp_path
+):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc)
+    workspace = "/project/Pulse"
+    prompt = (
+        "Pulse_V2 — micro-jalon de routes HTML\n"
+        "Contexte :\n"
+        "Les routes HTML existent depuis le prototype.\n"
+        "Objectif :\n"
+        "Conserver une documentation factuelle du comportement.\n"
+        "À faire :\n"
+        "Vérifier les sorties sans modifier SQLite.\n"
+        "Validation attendue :\n"
+        "Les tests passent."
+    )
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            f"Modified {workspace}/src/app.py",
+            {
+                "path": f"{workspace}/src/app.py",
+                "event": "modified",
+                "workspace": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=1),
+            "terminal",
+            "Command failed (2): make test",
+            {
+                "command": "make test",
+                "exit_code": 2,
+                "cwd": workspace,
+            },
+        ),
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=2),
+            "terminal",
+            f"Command failed (127): {prompt}",
+            {
+                "command": prompt,
+                "exit_code": 127,
+                "cwd": workspace,
+            },
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace)
+    available_day = build_available_days(
+        store, timezone.utc
+    )["days"][0]
+
+    assert "Pulse_V2 — micro-jalon de routes HTML" in markdown
+    assert "Contexte :" in markdown
+    assert "Erreurs terminal : make test" in markdown
+    assert "Erreurs terminal : Pulse" not in markdown
+    assert (
+        "- Erreur terminal récente : make test — code 2"
+        in markdown
+    )
+    assert (
+        "- Dernier signal utile observé : terminal\\_finished — make test"
+        in markdown
+    )
+    assert available_day["summary"][1] == (
+        "Tests échoués · Erreurs observées · 3 événements"
+    )
+    assert available_day["project_summaries"][0]["summary"][1] == (
+        "Tests échoués · Erreurs observées"
+    )
+    assert all(
+        "Pulse_V2 — micro-jalon" not in line
+        for line in available_day["summary"]
+    )
 
 
 def test_resume_reports_latest_terminal_error(tmp_path):

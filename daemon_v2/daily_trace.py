@@ -227,8 +227,54 @@ def _is_pulse_inspection_command(line: str) -> bool:
     )
 
 
+def _is_pasted_prompt_command(command: str) -> bool:
+    lines = [line.strip() for line in command.splitlines() if line.strip()]
+    if not lines:
+        return False
+
+    try:
+        first_parts = shlex.split(lines[0])
+    except ValueError:
+        first_parts = lines[0].split()
+    first_executable = Path(first_parts[0]).name if first_parts else ""
+    if first_executable.startswith("python") or first_executable in {
+        "curl",
+        "git",
+        "make",
+        "npm",
+        "pytest",
+    }:
+        return False
+
+    markers = (
+        "contexte",
+        "objectif",
+        "à faire",
+        "contraintes",
+        "validation attendue",
+        "problème",
+    )
+    marker_count = sum(
+        bool(re.search(rf"(?i)\b{re.escape(marker)}\s*:", command))
+        for marker in markers
+    )
+    document_title = bool(
+        re.match(r"^[\w.-]+\s+[—-]\s+\S+", lines[0])
+    )
+    return (
+        marker_count >= 2
+        and (len(lines) >= 3 or len(command) >= 160)
+    ) or (
+        document_title
+        and marker_count >= 1
+        and len(command) >= 80
+    )
+
+
 def _useful_command_lines(command: Any) -> list[str]:
     if not isinstance(command, str):
+        return []
+    if _is_pasted_prompt_command(command):
         return []
     return [
         line.strip()
