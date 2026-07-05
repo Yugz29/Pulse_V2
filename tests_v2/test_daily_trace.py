@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -91,6 +91,75 @@ def test_builds_structured_daily_trace(tmp_path):
         "- 08:05 · **terminal\\_finished** `test` — Command succeeded: `pytest`\n"
         "  - CWD : /project"
     ) in markdown
+
+
+def test_renders_observed_session_durations(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    zone = timezone.utc
+    session_times = [
+        datetime(2026, 7, 3, 16, 47, tzinfo=zone),
+        datetime(2026, 7, 3, 16, 59, tzinfo=zone),
+        datetime(2026, 7, 3, 18, 4, tzinfo=zone),
+        datetime(2026, 7, 3, 18, 34, tzinfo=zone),
+        datetime(2026, 7, 3, 19, 4, tzinfo=zone),
+        datetime(2026, 7, 3, 19, 6, tzinfo=zone),
+    ]
+    for index, occurred_at in enumerate(session_times):
+        store.append(
+            Activity(
+                "terminal_finished",
+                occurred_at,
+                "terminal",
+                f"Command succeeded: echo {index}",
+                {
+                    "command": f"echo {index}",
+                    "exit_code": 0,
+                    "cwd": "/project/Pulse",
+                },
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), zone)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    assert "## Session 1 — 16:47–16:59 · 12 min" in markdown
+    assert "## Session 2 — 18:04–19:06 · 1h02" in markdown
+    assert "<h2>Session 1 · 16:47–16:59 · 12 min</h2>" in html
+    assert "<h2>Session 2 · 18:04–19:06 · 1h02</h2>" in html
+
+
+def test_marks_current_day_last_session_in_progress(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    now = datetime.now().astimezone()
+    zone = now.tzinfo
+    first_at = datetime.combine(now.date(), time(19, 30), zone)
+    for occurred_at in (first_at, first_at + timedelta(minutes=17)):
+        store.append(
+            Activity(
+                "terminal_finished",
+                occurred_at,
+                "terminal",
+                "Command succeeded: echo active",
+                {
+                    "command": "echo active",
+                    "exit_code": 0,
+                    "cwd": "/project/Pulse",
+                },
+            )
+        )
+
+    trace = build_daily_trace(store, now.date(), zone)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+    archive_html = render_daily_trace_html(trace, archive_mode=True)
+
+    assert "## Session 1 — 19:30–19:47 · 17 min · en cours" in markdown
+    assert (
+        "<h2>Session 1 · 19:30–19:47 · 17 min · en cours</h2>"
+        in html
+    )
+    assert "· en cours</h2>" not in archive_html
 
 
 def test_renders_empty_daily_trace():

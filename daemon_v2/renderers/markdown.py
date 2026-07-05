@@ -1,5 +1,6 @@
 """Markdown renderer for daily traces."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ from ..analysis.timeline import (
     _displayed_sessions,
     _file_change_groups,
     _ranked_apps,
+    _session_duration,
+    _session_observed_bounds,
 )
 from ..daily_trace import (
     SummaryFact,
@@ -132,10 +135,25 @@ def render_daily_trace_markdown(trace: dict[str, Any]) -> str:
         lines.extend(["_Aucune activité._", ""])
         return "\n".join(lines)
 
+    current_day = datetime.now().astimezone().date().isoformat()
     for index, session in enumerate(displayed_sessions, start=1):
-        started_at = _display_time(session["started_at"])
-        ended_at = _display_time(session["ended_at"])
-        lines.extend([f"## Session {index} — {started_at}–{ended_at}", ""])
+        observed_start, observed_end = _session_observed_bounds(session)
+        started_at = _display_time(observed_start)
+        ended_at = _display_time(observed_end)
+        duration = _session_duration(session)
+        in_progress = (
+            " · en cours"
+            if trace["date"] == current_day
+            and index == len(displayed_sessions)
+            else ""
+        )
+        lines.extend(
+            [
+                f"## Session {index} — {started_at}–{ended_at}"
+                f" · {duration}{in_progress}",
+                "",
+            ]
+        )
         project_summaries = _session_project_summaries(
             session, project_workspaces
         )

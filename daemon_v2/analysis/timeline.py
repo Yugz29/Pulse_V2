@@ -13,6 +13,49 @@ def _display_time(value: str) -> str:
     return datetime.fromisoformat(value).strftime("%H:%M")
 
 
+def _session_observed_bounds(session: dict[str, Any]) -> tuple[str, str]:
+    file_change_groups = _file_change_groups(session)
+    app_activation_counts = _app_activation_counts(session)
+    rendered_app_activations = False
+    rendered_activities = []
+    for activity in session["activities"]:
+        details = activity.get("details", {})
+        if activity["type"] == "app_activated":
+            if details.get("app") not in app_activation_counts:
+                continue
+            if rendered_app_activations:
+                continue
+            rendered_app_activations = True
+        elif (
+            activity["type"] == "file_changed"
+            and details.get("event", details.get("change"))
+            and details.get("path")
+            and id(activity) not in file_change_groups
+        ):
+            continue
+        rendered_activities.append(activity)
+
+    if not rendered_activities:
+        return session["started_at"], session["ended_at"]
+    return (
+        rendered_activities[0]["occurred_at"],
+        rendered_activities[-1]["occurred_at"],
+    )
+
+
+def _session_duration(session: dict[str, Any]) -> str:
+    started_at, ended_at = _session_observed_bounds(session)
+    duration = (
+        datetime.fromisoformat(ended_at)
+        - datetime.fromisoformat(started_at)
+    )
+    minutes = max(0, int(duration.total_seconds() // 60))
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, remaining_minutes = divmod(minutes, 60)
+    return f"{hours}h{remaining_minutes:02d}"
+
+
 def _display_file_path(path: str, workspace: str | None) -> str:
     display_path = Path(path)
     if workspace:

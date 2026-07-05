@@ -1,5 +1,6 @@
 """HTML renderers for daily traces and available-day archives."""
 
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from ..analysis.timeline import (
     _displayed_sessions,
     _file_change_groups,
     _ranked_apps,
+    _session_duration,
+    _session_observed_bounds,
     _session_project_sequence,
 )
 from ..daily_trace import (
@@ -303,9 +306,19 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
     if not displayed_sessions:
         body.append("<p>Aucune activité pour cette journée.</p>")
 
+    current_day = datetime.now().astimezone().date().isoformat()
     for index, session in enumerate(displayed_sessions, start=1):
-        started_at = _display_time(session["started_at"])
-        ended_at = _display_time(session["ended_at"])
+        observed_start, observed_end = _session_observed_bounds(session)
+        started_at = _display_time(observed_start)
+        ended_at = _display_time(observed_end)
+        duration = _session_duration(session)
+        in_progress = (
+            " · en cours"
+            if not archive_mode
+            and trace["date"] == current_day
+            and index == len(displayed_sessions)
+            else ""
+        )
         project_summaries = _session_project_summaries(
             session, project_workspaces
         )
@@ -316,7 +329,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         body.extend(
             [
                 f'<section class="session" id="session-{index}">',
-                f"<h2>Session {index} · {started_at}–{ended_at}</h2>",
+                f"<h2>Session {index} · {started_at}–{ended_at}"
+                f" · {duration}{in_progress}</h2>",
             ]
         )
         if project_summaries or session_facts:
