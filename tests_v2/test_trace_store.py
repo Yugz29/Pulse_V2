@@ -87,6 +87,9 @@ def test_out_of_order_activity_reuses_session_containing_its_timestamp(tmp_path)
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     markdown = render_daily_trace_markdown(trace)
     assert trace["session_count"] == 1
-    assert "## Session 1 — 12:28–13:10 · 42 min" in markdown
-    assert "## Session 2" not in markdown
+    assert "## Session 1 — 12:28–12:28 · 0 min" in markdown
+    assert "## Session 2 — 13:10–13:10 · 0 min" in markdown
+    assert "## Activité passive" in markdown
+    assert "- 12:50 · Code" in markdown
+    assert "Apps actives : Terminal, Code" in markdown
     assert "pytest tests_v2" in markdown

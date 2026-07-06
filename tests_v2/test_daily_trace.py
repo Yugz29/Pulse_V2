@@ -258,8 +258,8 @@ def test_marks_current_day_last_session_in_progress(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     now = datetime.now().astimezone()
     zone = now.tzinfo
-    first_at = datetime.combine(now.date(), time(19, 30), zone)
-    for occurred_at in (first_at, first_at + timedelta(minutes=17)):
+    first_at = now - timedelta(minutes=17)
+    for occurred_at in (first_at, now):
         store.append(
             Activity(
                 "terminal_finished",
@@ -279,12 +279,124 @@ def test_marks_current_day_last_session_in_progress(tmp_path):
     html = render_daily_trace_html(trace)
     archive_html = render_daily_trace_html(trace, archive_mode=True)
 
-    assert "## Session 1 — 19:30–19:47 · 17 min · en cours" in markdown
+    expected_range = f"{first_at:%H:%M}–{now:%H:%M}"
+    assert f"## Session 1 — {expected_range} · 17 min · en cours" in markdown
     assert (
-        "<h2>Session 1 · 19:30–19:47 · 17 min · en cours</h2>"
+        f"<h2>Session 1 · {expected_range} · 17 min · en cours</h2>"
         in html
     )
     assert "· en cours</h2>" not in archive_html
+
+
+def test_weak_activity_does_not_extend_or_keep_work_session_open(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    now = datetime.now().astimezone().replace(second=0, microsecond=0)
+    strong_at = now - timedelta(hours=3)
+    store.append(
+        Activity(
+            "terminal_finished",
+            strong_at,
+            "terminal",
+            "Command succeeded: make test",
+            {"command": "make test", "exit_code": 0, "cwd": "/project/Pulse"},
+        )
+    )
+    for offset in range(20, 181, 20):
+        store.append(
+            Activity(
+                "app_activated",
+                strong_at + timedelta(minutes=offset),
+                "application",
+                "Activated Safari",
+                {"app": "Safari"},
+            )
+        )
+
+    trace = build_daily_trace(store, now.date(), now.tzinfo)
+    summary = build_daily_summary(trace)
+    markdown = render_daily_trace_markdown(trace)
+    html = render_daily_trace_html(trace)
+
+    strong_time = strong_at.strftime("%H:%M")
+    assert summary["session_count"] == 1
+    assert summary["passive_activity_count"] == 1
+    assert f"## Session 1 — {strong_time}–{strong_time} · 0 min" in markdown
+    assert "· en cours" not in markdown
+    assert "· en cours</h2>" not in html
+    assert "## Activité passive" in markdown
+
+
+def test_strong_activity_every_ten_minutes_keeps_one_session(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 18, 0, tzinfo=timezone.utc)
+    for offset in (0, 10, 20, 30, 40):
+        store.append(
+            Activity(
+                "terminal_finished",
+                first_at + timedelta(minutes=offset),
+                "terminal",
+                "Command succeeded: pwd",
+                {"command": "pwd", "exit_code": 0, "cwd": "/project/Pulse"},
+            )
+        )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    summary = build_daily_summary(trace, project_mode="archive")
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+
+    assert summary["session_count"] == 1
+    assert summary["passive_activity_count"] == 0
+    assert "## Session 1 — 18:00–18:40 · 40 min" in markdown
+    assert "## Session 2" not in markdown
+
+
+def test_weak_activity_does_not_join_strong_activity_across_long_pause(
+    tmp_path,
+):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    first_at = datetime(2026, 7, 3, 18, 0, tzinfo=timezone.utc)
+    activities = [
+        Activity(
+            "file_changed",
+            first_at,
+            "filesystem",
+            "Modified app.py",
+            {
+                "path": "/project/Pulse/app.py",
+                "event": "modified",
+                "workspace": "/project/Pulse",
+            },
+        ),
+        *[
+            Activity(
+                "app_activated",
+                first_at + timedelta(minutes=offset),
+                "application",
+                "Activated Safari",
+                {"app": "Safari"},
+            )
+            for offset in (10, 20, 30, 40, 50)
+        ],
+        Activity(
+            "terminal_finished",
+            first_at + timedelta(minutes=60),
+            "terminal",
+            "Command succeeded: pytest",
+            {"command": "pytest", "exit_code": 0, "cwd": "/project/Pulse"},
+        ),
+    ]
+    for activity in activities:
+        store.append(activity)
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    summary = build_daily_summary(trace, project_mode="archive")
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+
+    assert summary["session_count"] == 2
+    assert summary["passive_activity_count"] == 1
+    assert "## Session 1 — 18:00–18:00 · 0 min" in markdown
+    assert "## Session 2 — 19:00–19:00 · 0 min" in markdown
+    assert "## Activité passive" in markdown
 
 
 def test_renders_empty_daily_trace():

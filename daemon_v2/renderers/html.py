@@ -19,6 +19,7 @@ from ..analysis.timeline import (
     _passive_sessions,
     _ranked_apps,
     _session_duration,
+    _session_has_recent_strong_activity,
     _session_observed_bounds,
     _session_project_sequence,
 )
@@ -324,7 +325,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
     if not displayed_sessions and not passive_sessions:
         body.append("<p>Aucune activité pour cette journée.</p>")
 
-    current_day = datetime.now().astimezone().date().isoformat()
+    now = datetime.now().astimezone()
+    current_day = now.date().isoformat()
     for index, session in enumerate(displayed_sessions, start=1):
         observed_start, observed_end = _session_observed_bounds(session)
         started_at = _display_time(observed_start)
@@ -335,6 +337,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             if not archive_mode
             and trace["date"] == current_day
             and index == len(displayed_sessions)
+            and _session_has_recent_strong_activity(session, now)
             else ""
         )
         project_summaries = _session_project_summaries(

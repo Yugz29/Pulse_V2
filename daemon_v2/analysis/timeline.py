@@ -1,7 +1,7 @@
 """Pure helpers for preparing timeline data for renderers."""
 
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +9,8 @@ from .projects import activity_project_root, activity_workspace, is_weak_workspa
 
 
 IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu", "Finder", "loginwindow"}
+WORK_SESSION_GAP = timedelta(minutes=30)
+WEAK_CONTEXT_WINDOW = timedelta(minutes=15)
 
 # Temporary aliases preserve the renderer-facing timeline API.
 _activity_workspace = activity_workspace
@@ -20,6 +22,17 @@ def _display_time(value: str) -> str:
 
 
 def _session_observed_bounds(session: dict[str, Any]) -> tuple[str, str]:
+    strong_activities = [
+        activity
+        for activity in session["activities"]
+        if _is_strong_work_activity(activity)
+    ]
+    if strong_activities:
+        return (
+            strong_activities[0]["occurred_at"],
+            strong_activities[-1]["occurred_at"],
+        )
+
     file_change_groups = _file_change_groups(session)
     app_activation_counts = _app_activation_counts(session)
     rendered_app_activations = False
@@ -97,48 +110,134 @@ def _ranked_apps(counts: dict[str, int], limit: int = 5) -> list[tuple[str, int]
     return sorted(counts.items(), key=lambda item: -item[1])[:limit]
 
 
-def _is_passive_session(session: dict[str, Any]) -> bool:
-    visible_activities = [
-        activity
-        for activity in session["activities"]
-        if not (
-            activity["type"] == "app_activated"
-            and activity.get("details", {}).get("app")
-            in IGNORED_APP_NAMES_FOR_RENDERING
+def _is_strong_work_activity(activity: dict[str, Any]) -> bool:
+    return activity["type"] in {"terminal_finished", "file_changed"}
+
+
+def _session_from_activities(
+    source_session: dict[str, Any],
+    activities: list[dict[str, Any]],
+    suffix: str,
+) -> dict[str, Any]:
+    return {
+        "id": f"{source_session['id']}-{suffix}",
+        "started_at": activities[0]["occurred_at"],
+        "ended_at": activities[-1]["occurred_at"],
+        "activity_count": len(activities),
+        "activities": activities,
+    }
+
+
+def _split_rendered_sessions(
+    trace: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    work_sessions = []
+    passive_sessions = []
+    for source_session in trace["sessions"]:
+        activities = sorted(
+            source_session["activities"],
+            key=lambda activity: (
+                activity["occurred_at"],
+                activity.get("id", 0),
+            ),
         )
-    ]
-    return bool(visible_activities) and (
-        _session_duration_seconds(session) < 120
-        and all(
-            activity["type"] == "app_activated"
-            for activity in visible_activities
-        )
-    )
+        strong_activities = [
+            activity
+            for activity in activities
+            if _is_strong_work_activity(activity)
+        ]
 
+        strong_groups: list[list[dict[str, Any]]] = []
+        for activity in strong_activities:
+            if not strong_groups:
+                strong_groups.append([activity])
+                continue
+            previous_at = datetime.fromisoformat(
+                strong_groups[-1][-1]["occurred_at"]
+            )
+            current_at = datetime.fromisoformat(activity["occurred_at"])
+            if current_at - previous_at <= WORK_SESSION_GAP:
+                strong_groups[-1].append(activity)
+            else:
+                strong_groups.append([activity])
 
-def _passive_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        session
-        for session in trace["sessions"]
-        if _is_passive_session(session)
-    ]
+        assigned_ids: set[int] = set()
+        for index, strong_group in enumerate(strong_groups, start=1):
+            started_at = datetime.fromisoformat(
+                strong_group[0]["occurred_at"]
+            ) - WEAK_CONTEXT_WINDOW
+            ended_at = datetime.fromisoformat(
+                strong_group[-1]["occurred_at"]
+            ) + WEAK_CONTEXT_WINDOW
+            grouped_activities = [
+                activity
+                for activity in activities
+                if started_at
+                <= datetime.fromisoformat(activity["occurred_at"])
+                <= ended_at
+            ]
+            assigned_ids.update(id(activity) for activity in grouped_activities)
+            work_sessions.append(
+                _session_from_activities(
+                    source_session,
+                    grouped_activities,
+                    f"work-{index}",
+                )
+            )
 
-
-def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return work sessions kept in the main journal timeline."""
-    return [
-        session
-        for session in trace["sessions"]
-        if not _is_passive_session(session)
-        and any(
-            not (
+        passive_activities = [
+            activity
+            for activity in activities
+            if id(activity) not in assigned_ids
+            and not (
                 activity["type"] == "app_activated"
                 and activity.get("details", {}).get("app")
                 in IGNORED_APP_NAMES_FOR_RENDERING
             )
-            for activity in session["activities"]
+        ]
+        passive_groups: list[list[dict[str, Any]]] = []
+        for activity in passive_activities:
+            if not passive_groups:
+                passive_groups.append([activity])
+                continue
+            previous_at = datetime.fromisoformat(
+                passive_groups[-1][-1]["occurred_at"]
+            )
+            current_at = datetime.fromisoformat(activity["occurred_at"])
+            if current_at - previous_at <= WORK_SESSION_GAP:
+                passive_groups[-1].append(activity)
+            else:
+                passive_groups.append([activity])
+        passive_sessions.extend(
+            _session_from_activities(
+                source_session,
+                group,
+                f"passive-{index}",
+            )
+            for index, group in enumerate(passive_groups, start=1)
         )
+    return work_sessions, passive_sessions
+
+
+def _passive_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    return _split_rendered_sessions(trace)[1]
+
+
+def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return work sessions segmented only by strong activity."""
+    return _split_rendered_sessions(trace)[0]
+
+
+def _session_has_recent_strong_activity(
+    session: dict[str, Any],
+    now: datetime,
+) -> bool:
+    strong_times = [
+        datetime.fromisoformat(activity["occurred_at"])
+        for activity in session["activities"]
+        if _is_strong_work_activity(activity)
     ]
+    return bool(strong_times) and now - strong_times[-1] <= WORK_SESSION_GAP
 
 
 def _file_change_groups(
