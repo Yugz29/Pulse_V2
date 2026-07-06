@@ -16,6 +16,7 @@ from ..analysis.timeline import (
     _display_time,
     _displayed_sessions,
     _file_change_groups,
+    _passive_sessions,
     _ranked_apps,
     _session_duration,
     _session_observed_bounds,
@@ -57,6 +58,7 @@ def render_daily_trace_html(
     current = build_current_state(trace) if not archive_mode else None
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
+    passive_sessions = _passive_sessions(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
         f'<span title="{escape(path)}">'
@@ -207,7 +209,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         ),
         (
             f'<div class="meta">{trace["activity_count"]} activité(s) · '
-            f'{trace["session_count"]} session(s)</div>'
+            f'{summary["session_count"]} session(s) de travail · '
+            f'{summary["passive_activity_count"]} activité(s) passive(s)</div>'
         ),
         "</header>",
     ]
@@ -267,7 +270,14 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             if archive_mode
             else '<section class="summary" id="aujourdhui"><h2>Aujourd’hui</h2><dl>'
         ),
-        f"<dt>Sessions</dt><dd>{summary['session_count']}</dd>",
+        (
+            "<dt>Sessions de travail</dt>"
+            f"<dd>{summary['session_count']}</dd>"
+        ),
+        (
+            "<dt>Activités passives</dt>"
+            f"<dd>{summary['passive_activity_count']}</dd>"
+        ),
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
         f"<dt>Tests</dt><dd>{summary['test_count']}</dd>",
@@ -311,7 +321,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             ]
         )
 
-    if not displayed_sessions:
+    if not displayed_sessions and not passive_sessions:
         body.append("<p>Aucune activité pour cette journée.</p>")
 
     current_day = datetime.now().astimezone().date().isoformat()
@@ -484,6 +494,30 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                 f'<div class="content">{content}{detail_html}</div></li>'
             )
         body.extend(["</ul>", "</section>"])
+
+    if passive_sessions:
+        passive_items = []
+        for session in passive_sessions:
+            passive_started_at, _passive_ended_at = _session_observed_bounds(
+                session
+            )
+            passive_apps = [
+                escape(str(app))
+                for app, _count in _ranked_apps(
+                    _app_activation_counts(session)
+                )
+            ]
+            passive_items.append(
+                f"<li>{escape(_display_time(passive_started_at))} · "
+                f"{', '.join(passive_apps)}</li>"
+            )
+        body.append(
+            '<section class="summary" id="activite-passive">'
+            "<h2>Activité passive</h2>"
+            "<p>Ces signaux ont été observés mais ne sont pas considérés "
+            "comme des sessions de travail.</p>"
+            f"<ul>{''.join(passive_items)}</ul></section>"
+        )
 
     body.extend(
         [

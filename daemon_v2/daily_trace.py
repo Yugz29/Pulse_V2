@@ -28,6 +28,7 @@ from .analysis.timeline import (
     _display_file_path,
     _display_time,
     _displayed_sessions,
+    _passive_sessions,
 )
 from .trace_store import TraceStore
 
@@ -619,6 +620,7 @@ def build_daily_summary(
 
     return {
         "session_count": len(_displayed_sessions(trace)),
+        "passive_activity_count": len(_passive_sessions(trace)),
         "activity_count": trace["activity_count"],
         "terminal_count": terminal_count,
         "test_count": terminal_label_counts["test"],

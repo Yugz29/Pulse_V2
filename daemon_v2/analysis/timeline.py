@@ -62,6 +62,17 @@ def _session_duration(session: dict[str, Any]) -> str:
     return f"{hours}h{remaining_minutes:02d}"
 
 
+def _session_duration_seconds(session: dict[str, Any]) -> float:
+    started_at, ended_at = _session_observed_bounds(session)
+    return max(
+        0,
+        (
+            datetime.fromisoformat(ended_at)
+            - datetime.fromisoformat(started_at)
+        ).total_seconds(),
+    )
+
+
 def _display_file_path(path: str, workspace: str | None) -> str:
     display_path = Path(path)
     if workspace:
@@ -86,20 +97,48 @@ def _ranked_apps(counts: dict[str, int], limit: int = 5) -> list[tuple[str, int]
     return sorted(counts.items(), key=lambda item: -item[1])[:limit]
 
 
+def _is_passive_session(session: dict[str, Any]) -> bool:
+    visible_activities = [
+        activity
+        for activity in session["activities"]
+        if not (
+            activity["type"] == "app_activated"
+            and activity.get("details", {}).get("app")
+            in IGNORED_APP_NAMES_FOR_RENDERING
+        )
+    ]
+    return bool(visible_activities) and (
+        _session_duration_seconds(session) < 120
+        and all(
+            activity["type"] == "app_activated"
+            for activity in visible_activities
+        )
+    )
+
+
+def _passive_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        session
+        for session in trace["sessions"]
+        if _is_passive_session(session)
+    ]
+
+
 def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
-    displayed = []
-    for session in trace["sessions"]:
-        if any(
-            activity["type"] in {"terminal_finished", "file_changed"}
-            or (
+    """Return work sessions kept in the main journal timeline."""
+    return [
+        session
+        for session in trace["sessions"]
+        if not _is_passive_session(session)
+        and any(
+            not (
                 activity["type"] == "app_activated"
                 and activity.get("details", {}).get("app")
-                not in IGNORED_APP_NAMES_FOR_RENDERING
+                in IGNORED_APP_NAMES_FOR_RENDERING
             )
             for activity in session["activities"]
-        ):
-            displayed.append(session)
-    return displayed
+        )
+    ]
 
 
 def _file_change_groups(

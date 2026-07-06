@@ -7,6 +7,7 @@ from daemon_v2.daily_trace import (
     _is_pulse_inspection_command,
     build_available_days,
     build_current_state,
+    build_daily_summary,
     build_daily_trace,
     render_daily_trace_html,
     render_daily_trace_markdown,
@@ -129,6 +130,130 @@ def test_renders_observed_session_durations(tmp_path):
     assert "<h2>Session 2 · 18:04–19:06 · 1h02</h2>" in html
 
 
+def test_moves_short_app_only_sessions_to_passive_activity(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    hidden_app_times = [time(1, 32), time(2, 13), time(11, 17)]
+    passive_groups = [
+        (time(1, 42), ["Safari", "ChatGPT"]),
+        (time(2, 23), ["Safari"]),
+        (
+            time(11, 27),
+            ["ChatGPT", "Pages", "Google Chrome", "Safari", "Code"],
+        ),
+    ]
+    for hidden_time, (start_time, apps) in zip(
+        hidden_app_times, passive_groups, strict=True
+    ):
+        store.append(
+            Activity(
+                "app_activated",
+                datetime.combine(
+                    date(2026, 7, 3), hidden_time, timezone.utc
+                ),
+                "application",
+                "Activated Finder",
+                {"app": "Finder"},
+            )
+        )
+        started_at = datetime.combine(
+            date(2026, 7, 3), start_time, timezone.utc
+        )
+        for offset, app in enumerate(apps):
+            store.append(
+                Activity(
+                    "app_activated",
+                    started_at + timedelta(seconds=offset),
+                    "application",
+                    f"Activated {app}",
+                    {"app": app},
+                )
+            )
+    store.append(
+        Activity(
+            "terminal_finished",
+            datetime(2026, 7, 3, 12, 30, tzinfo=timezone.utc),
+            "terminal",
+            "Command succeeded: make test",
+            {"command": "make test", "exit_code": 0, "cwd": "/project/Pulse"},
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+    html = render_daily_trace_html(trace, archive_mode=True)
+
+    assert "- Sessions de travail : 1" in markdown
+    assert "- Activités passives : 3" in markdown
+    assert markdown.count("## Session ") == 1
+    assert "## Session 1 — 12:30–12:30 · 0 min" in markdown
+    assert "- 01:42 · Safari, ChatGPT" in markdown
+    assert "- 02:23 · Safari" in markdown
+    assert "- 11:27 · ChatGPT, Pages, Google Chrome, Safari, Code" in markdown
+    assert markdown.index("## Activité passive") > markdown.index("## Session 1")
+    assert "<dt>Sessions de travail</dt><dd>1</dd>" in html
+    assert "<dt>Activités passives</dt><dd>3</dd>" in html
+    assert html.count('<section class="session" id="session-') == 1
+
+
+def test_day_with_only_passive_activity_has_no_work_session(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    store.append(
+        Activity(
+            "app_activated",
+            datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc),
+            "application",
+            "Activated Safari",
+            {"app": "Safari"},
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+    html = render_daily_trace_html(trace, archive_mode=True)
+
+    assert "- Sessions de travail : 0" in markdown
+    assert "- Activités passives : 1" in markdown
+    assert "## Session " not in markdown
+    assert "- 09:00 · Safari" in markdown
+    assert '<section class="session" id="session-' not in html
+    assert "<h2>Activité passive</h2>" in html
+
+
+def test_short_terminal_and_file_sessions_remain_work_sessions(tmp_path):
+    store = TraceStore(tmp_path / "pulse.sqlite3")
+    store.append(
+        Activity(
+            "terminal_finished",
+            datetime(2026, 7, 3, 8, 0, tzinfo=timezone.utc),
+            "terminal",
+            "Command succeeded: pwd",
+            {"command": "pwd", "exit_code": 0, "cwd": "/project/Pulse"},
+        )
+    )
+    store.append(
+        Activity(
+            "file_changed",
+            datetime(2026, 7, 3, 9, 0, tzinfo=timezone.utc),
+            "filesystem",
+            "Modified app.py",
+            {
+                "path": "/project/Pulse/app.py",
+                "event": "modified",
+                "workspace": "/project/Pulse",
+            },
+        )
+    )
+
+    trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
+    summary = build_daily_summary(trace, project_mode="archive")
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+
+    assert summary["session_count"] == 2
+    assert summary["passive_activity_count"] == 0
+    assert markdown.count("## Session ") == 2
+    assert "## Activité passive" not in markdown
+
+
 def test_marks_current_day_last_session_in_progress(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     now = datetime.now().astimezone()
@@ -175,7 +300,8 @@ def test_renders_empty_daily_trace():
     assert "## Maintenant" in markdown
     assert "## Aujourd’hui" in markdown
     assert "- Projet probable : Non détecté" in markdown
-    assert "- Sessions : 0" in markdown
+    assert "- Sessions de travail : 0" in markdown
+    assert "- Activités passives : 0" in markdown
     assert "- Événements : 0" in markdown
     assert "- Dernière activité utile : Non détectée" in markdown
     assert markdown.endswith("_Aucune activité._\n")
@@ -452,8 +578,11 @@ def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
     html = render_daily_trace_html(trace)
 
     assert trace["session_count"] == 2
-    assert markdown.count("Apps actives : ChatGPT") == 2
-    assert markdown.count("- Apps actives : ChatGPT\n") == 2
+    assert "## Session " not in markdown
+    assert "## Activité passive" in markdown
+    assert "- 08:00 · ChatGPT" in markdown
+    assert "- 09:00 · ChatGPT" in markdown
+    assert "<h2>Activité passive</h2>" in html
     assert "Résumé de session" not in markdown
     assert "Résumé de session" not in html
 
@@ -540,7 +669,8 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "Session active depuis : 10:00",
         "Dernière activité utile : terminal\\_finished — git push",
         "## Aujourd’hui",
-        "Sessions : 1",
+        "Sessions de travail : 1",
+        "Activités passives : 0",
         "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
@@ -557,7 +687,8 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "<dt>Session active depuis</dt><dd>10:00</dd>",
         "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
         "<h2>Aujourd’hui</h2>",
-        "<dt>Sessions</dt><dd>1</dd>",
+        "<dt>Sessions de travail</dt><dd>1</dd>",
+        "<dt>Activités passives</dt><dd>0</dd>",
         "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
@@ -1371,13 +1502,15 @@ def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
     assert [activity["details"]["app"] for activity in trace["sessions"][0]["activities"]] == [
         "loginwindow"
     ]
-    assert "- Sessions : 1" in markdown
+    assert "- Sessions de travail : 1" in markdown
+    assert "- Activités passives : 0" in markdown
     assert markdown.count("## Session ") == 1
     assert "Apps principales : ChatGPT" in markdown
     assert "Apps actives : ChatGPT" in markdown
     assert "Finder" not in markdown
     assert "loginwindow" not in markdown
-    assert "<dt>Sessions</dt><dd>1</dd>" in html
+    assert "<dt>Sessions de travail</dt><dd>1</dd>" in html
+    assert "<dt>Activités passives</dt><dd>0</dd>" in html
     assert html.count('<section class="session" id="session-') == 1
     assert "Apps actives : ChatGPT" in html
     assert "Finder" not in html

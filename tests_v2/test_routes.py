@@ -164,12 +164,14 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
         for activity in trace["sessions"][0]["activities"]
     ] == apps
 
-    expected = "Apps actives : ChatGPT, Terminal, Safari, Code, Codex"
+    expected = "ChatGPT, Terminal, Safari, Code, Codex"
     expected_summary = "Apps principales : ChatGPT, Terminal, Safari, Code, Codex"
     markdown = client.get("/trace/today.md").get_data(as_text=True)
     html = client.get("/").get_data(as_text=True)
     assert expected in markdown
     assert expected in html
+    assert "## Activité passive" in markdown
+    assert "<h2>Activité passive</h2>" in html
     assert expected_summary in markdown
     assert (
         "<dt>Apps principales</dt>"
