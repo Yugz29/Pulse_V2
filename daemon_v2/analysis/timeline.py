@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .projects import activity_workspace, is_weak_workspace
+from .projects import activity_project_root, activity_workspace, is_weak_workspace
 
 
 IGNORED_APP_NAMES_FOR_RENDERING = {"CleanMyMac Menu", "Finder", "loginwindow"}
@@ -164,7 +164,7 @@ def _session_project_sequence(
             )
             and id(activity) not in file_change_groups
         )
-        workspace = _activity_workspace(activity)
+        workspace = activity_project_root(activity)
         if (
             not duplicate_file
             and workspace in project_workspaces

@@ -4,8 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..analysis.projects import (
+    activity_project_context,
+    activity_project_root,
+    resolve_project_context,
+)
 from ..analysis.timeline import (
-    _activity_workspace,
     _app_activation_counts,
     _display_file_path,
     _display_time,
@@ -65,7 +69,10 @@ def render_daily_trace_markdown(
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
     apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
-    projects = [_markdown_text(Path(path).name) for path in summary["workspaces"]]
+    projects = [
+        _markdown_text(resolve_project_context(path).project_name)
+        for path in summary["workspaces"]
+    ]
     project_workspaces = set(summary["workspaces"])
     last_activity = (
         f"{_markdown_text(current['last_activity_type'])} — "
@@ -220,14 +227,15 @@ def render_daily_trace_markdown(
                 and bool(event and path)
                 and id(activity) not in file_change_groups
             )
-            activity_workspace = _activity_workspace(activity)
+            activity_workspace = activity_project_root(activity)
             if (
                 not duplicate_file
                 and activity_workspace in project_workspaces
                 and activity_workspace != rendered_project
             ):
                 rendered_project = activity_workspace
-                lines.append(f"### {_markdown_text(Path(activity_workspace).name)}")
+                project_name = resolve_project_context(activity_workspace).project_name
+                lines.append(f"### {_markdown_text(project_name)}")
 
             if activity["type"] == "app_activated":
                 if details.get("app") not in app_activation_counts:
@@ -287,6 +295,11 @@ def render_daily_trace_markdown(
                 lines.append(f"- {occurred_at} · **{activity_type}** — {summary}")
 
             cwd = details.get("cwd")
+            project_context = activity_project_context(activity)
+            if project_context and project_context.module:
+                lines.append(
+                    f"  - Module : {_markdown_text(project_context.module)}"
+                )
             if cwd:
                 lines.append(f"  - CWD : {_markdown_text(cwd)}")
             if workspace:

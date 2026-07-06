@@ -5,8 +5,12 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from ..analysis.projects import (
+    activity_project_context,
+    activity_project_root,
+    resolve_project_context,
+)
 from ..analysis.timeline import (
-    _activity_workspace,
     _app_activation_counts,
     _display_file_path,
     _display_time,
@@ -55,7 +59,8 @@ def render_daily_trace_html(
     displayed_sessions = _displayed_sessions(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
-        f'<span title="{escape(path)}">{escape(Path(path).name)}</span>'
+        f'<span title="{escape(path)}">'
+        f"{escape(resolve_project_context(path).project_name)}</span>"
         for path in summary["workspaces"]
     ]
     project_workspaces = set(summary["workspaces"])
@@ -104,7 +109,7 @@ def render_daily_trace_html(
             navigation.append(
                 f'<a class="nav-project" '
                 f'href="#session-{index}-projet-{project_index}">'
-                f"{escape(Path(workspace).name)}</a>"
+                f"{escape(resolve_project_context(workspace).project_name)}</a>"
             )
     end_anchor = "timeline-end" if archive_mode else "timeline-live"
     end_label = "Fin du jour" if archive_mode else "Direct"
@@ -379,7 +384,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                 and bool(event and path)
                 and id(activity) not in file_change_groups
             )
-            activity_workspace = _activity_workspace(activity)
+            activity_workspace = activity_project_root(activity)
             if (
                 not duplicate_file
                 and activity_workspace in project_workspaces
@@ -390,7 +395,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                 body.append(
                     f'<li class="project-separator" '
                     f'id="session-{index}-projet-{rendered_project_index}">'
-                    f"{escape(Path(activity_workspace).name)}</li>"
+                    f"{escape(resolve_project_context(activity_workspace).project_name)}</li>"
                 )
             if activity["type"] == "app_activated":
                 if details.get("app") not in app_activation_counts:
@@ -456,6 +461,11 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                     content = escape(str(activity["summary"]))
 
             detail_lines = []
+            project_context = activity_project_context(activity)
+            if project_context and project_context.module:
+                detail_lines.append(
+                    f"Module : {escape(project_context.module)}"
+                )
             if details.get("cwd"):
                 detail_lines.append(f"CWD : {escape(str(details['cwd']))}")
             if workspace:

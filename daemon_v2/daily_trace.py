@@ -7,10 +7,12 @@ import subprocess
 from typing import Any, Literal
 
 from .analysis.projects import (
+    activity_project_root,
     activity_workspace,
     is_weak_workspace,
     last_observed_workspace,
     most_frequent_explicit_workspace,
+    resolve_project_context,
 )
 from .analysis.terminal import (
     TERMINAL_LABEL_ORDER,
@@ -82,13 +84,13 @@ def build_session_summary(
 
     for activity in session["activities"]:
         details = activity.get("details", {})
-        workspace = activity_workspace(activity)
+        workspace = activity_project_root(activity)
         workspace_is_useful = (
             activity["type"] != "terminal_finished"
             or bool(_useful_command_lines(details.get("command")))
         )
         if workspace_is_useful and workspace in project_workspaces:
-            project = Path(workspace).name
+            project = resolve_project_context(workspace).project_name
             if not project_sequence or project_sequence[-1] != project:
                 project_sequence.append(project)
             if project not in projects:
@@ -186,7 +188,7 @@ def _session_project_summaries(
     grouped_activities: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
     active_workspace = None
     for activity in session["activities"]:
-        workspace = activity_workspace(activity)
+        workspace = activity_project_root(activity)
         if workspace in project_workspaces:
             active_workspace = workspace
             grouped_activities.setdefault(workspace, [])
@@ -204,7 +206,7 @@ def _session_project_summaries(
             include_projects=False,
         )
         if facts:
-            summaries.append((Path(workspace).name, facts))
+            summaries.append((resolve_project_context(workspace).project_name, facts))
     return summaries
 
 
@@ -275,7 +277,11 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
                     last_command = command_lines[-1]
 
     return {
-        "project": Path(workspace).name if workspace else "Non détecté",
+        "project": (
+            resolve_project_context(workspace).project_name
+            if workspace
+            else "Non détecté"
+        ),
         "workspace": workspace or "Non détecté",
         "app": last_app or "Non détectée",
         "command": last_command or "Non détectée",
@@ -574,7 +580,7 @@ def build_daily_summary(
     for session in trace["sessions"]:
         for activity in session["activities"]:
             details = activity.get("details", {})
-            workspace = activity_workspace(activity)
+            workspace = activity_project_root(activity)
             workspace_is_useful = (
                 activity["type"] != "terminal_finished"
                 or bool(_useful_command_lines(details.get("command")))
@@ -732,7 +738,8 @@ def build_available_days(
         trace = build_daily_trace(store, day, zone)
         summary = build_daily_summary(trace, project_mode="archive")
         projects = [
-            Path(workspace).name for workspace in summary["workspaces"]
+            resolve_project_context(workspace).project_name
+            for workspace in summary["workspaces"]
         ]
         activities = [
             activity
@@ -744,12 +751,12 @@ def build_available_days(
             project_activities = [
                 activity
                 for activity in activities
-                if activity_workspace(activity) == workspace
+                if activity_project_root(activity) == workspace
             ]
             if project_activities:
                 project_summaries.append(
                     {
-                        "project": Path(workspace).name,
+                        "project": resolve_project_context(workspace).project_name,
                         "workspace": workspace,
                         "event_count": len(project_activities),
                         "summary": _build_compact_activity_summary(

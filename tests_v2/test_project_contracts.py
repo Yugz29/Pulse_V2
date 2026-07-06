@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from daemon_v2.analysis.projects import (
+    resolve_project_context,
     last_observed_workspace,
     most_frequent_explicit_workspace,
 )
@@ -65,6 +66,71 @@ def append_file(
 
 def trace_for(store: TraceStore) -> dict:
     return build_daily_trace(store, DAY, timezone.utc)
+
+
+def test_resolves_known_project_roots_and_modules():
+    cases = [
+        (
+            "/Users/yugz/Projets/DevNote/DevNote/backend",
+            "/Users/yugz/Projets/DevNote",
+            "DevNote",
+            "backend",
+        ),
+        (
+            "/Users/yugz/Projets/DevNote/DevNote/frontend",
+            "/Users/yugz/Projets/DevNote",
+            "DevNote",
+            "frontend",
+        ),
+        (
+            "/Users/yugz/Projets/Pulse_V2",
+            "/Users/yugz/Projets/Pulse_V2",
+            "Pulse_V2",
+            None,
+        ),
+        (
+            "/Users/yugz/Projets/Pulse_V2/daemon",
+            "/Users/yugz/Projets/Pulse_V2",
+            "Pulse_V2",
+            "daemon",
+        ),
+    ]
+
+    for cwd, project_root, project_name, module in cases:
+        context = resolve_project_context(cwd)
+        assert context.project_root == project_root
+        assert context.project_name == project_name
+        assert context.cwd == cwd
+        assert context.module == module
+
+
+def test_unknown_isolated_directory_keeps_existing_identity(tmp_path):
+    workspace = tmp_path / "unknown"
+    context = resolve_project_context(str(workspace))
+
+    assert context.project_root == str(workspace)
+    assert context.project_name == "unknown"
+    assert context.module is None
+
+
+def test_nested_modules_are_grouped_under_logical_project(tmp_path):
+    store = TraceStore(tmp_path / "trace.db")
+    backend = "/Users/yugz/Projets/DevNote/DevNote/backend"
+    frontend = "/Users/yugz/Projets/DevNote/DevNote/frontend"
+    append_terminal(store, "python -m pytest", backend, minute=0)
+    append_terminal(store, "npm run build", frontend, minute=1)
+
+    trace = trace_for(store)
+    summary = build_daily_summary(trace, project_mode="archive")
+    markdown = render_daily_trace_markdown(trace, archive_mode=True)
+
+    assert summary["workspaces"] == ["/Users/yugz/Projets/DevNote"]
+    assert "- Projets : DevNote" in markdown
+    assert "### DevNote" in markdown
+    assert "### backend" not in markdown
+    assert "### frontend" not in markdown
+    assert "Module : backend" in markdown
+    assert "Module : frontend" in markdown
 
 
 def test_weak_workspaces_remain_visible_but_are_not_projects(tmp_path):
