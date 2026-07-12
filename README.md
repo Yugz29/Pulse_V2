@@ -1,4 +1,4 @@
-# Pulse V2
+# Pulse Core
 
 Pulse V2 observe l’activité locale de développement, conserve une trace locale en append-only, regroupe les événements en sessions et reconstruit une vue lisible de la journée en cours.
 
