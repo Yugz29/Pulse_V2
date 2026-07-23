@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .git_context import read_git_context
-from .ingest import filter_terminal_command, redact_command
+from .ingest import filter_terminal_command, normalize_event, redact_command
 from .models import CanonicalEvent
 from .workspace_context import read_workspace_context
 
@@ -202,6 +202,39 @@ class ProducerOutbox:
             ).fetchone()[0]
         return int(pending), int(dead)
 
+    def inspect_dead_letters(self, *, limit: int) -> list[dict[str, Any]]:
+        """Return recent dead letters without modifying or replaying them."""
+        if limit <= 0:
+            raise ValueError("limit must be a strictly positive integer")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_id, payload_json, error, http_status
+                FROM dead_letters
+                ORDER BY failed_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        inspected: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = _strict_json_object(row["payload_json"])
+                event_type = payload.get("type")
+            except (json.JSONDecodeError, TypeError, ValueError):
+                event_type = None
+            inspected.append(
+                {
+                    "event_id": row["event_id"],
+                    "type": event_type,
+                    "last_error": row["error"],
+                    "http_status": row["http_status"],
+                    "payload_json": row["payload_json"],
+                }
+            )
+        return inspected
+
 
 def default_outbox_path() -> Path:
     configured = os.environ.get("PULSE_CORE_OUTBOX_PATH")
@@ -300,6 +333,24 @@ def enqueue_terminal_input(
     return outbox.enqueue_payload(payload_json)
 
 
+def enqueue_json_input(outbox: ProducerOutbox, raw_input: str) -> str:
+    """Validate one canonical object, then persist its original JSON exactly."""
+    payload = _strict_json_object(raw_input)
+    required = {
+        "event_id",
+        "schema_version",
+        "type",
+        "producer",
+        "occurred_at",
+        "details",
+    }
+    missing = sorted(required.difference(payload))
+    if missing:
+        raise ValueError(f"missing canonical fields: {', '.join(missing)}")
+    normalize_event(payload)
+    return outbox.enqueue_payload(raw_input)
+
+
 def _strict_json_object(raw: str) -> dict[str, Any]:
     def reject_constant(value: str) -> None:
         raise ValueError(f"invalid JSON constant: {value}")
@@ -330,6 +381,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "enqueue-terminal",
         help="read terminal observation JSON from stdin and enqueue it",
     )
+    subparsers.add_parser(
+        "enqueue-json",
+        help="validate and enqueue one canonical JSON object from stdin",
+    )
+    subparsers.add_parser(
+        "instance-id",
+        help="print the stable producer instance identifier",
+    )
+    inspect_parser = subparsers.add_parser(
+        "inspect-dead-letter",
+        help="show recent dead letters without replaying them",
+    )
+    inspect_parser.add_argument("--limit", type=int, default=10)
     subparsers.add_parser("status", help="show pending and dead-letter counts")
     return parser
 
@@ -337,11 +401,32 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
     outbox = ProducerOutbox(args.database)
-    if args.command == "enqueue-terminal":
-        event_id = enqueue_terminal_input(outbox, sys.stdin.read())
-        if event_id:
-            print(event_id)
-        return
+    try:
+        if args.command == "enqueue-terminal":
+            event_id = enqueue_terminal_input(outbox, sys.stdin.read())
+            if event_id:
+                print(event_id)
+            return
+        if args.command == "enqueue-json":
+            print(enqueue_json_input(outbox, sys.stdin.read()))
+            return
+        if args.command == "instance-id":
+            print(outbox.producer_instance_id())
+            return
+        if args.command == "inspect-dead-letter":
+            inspected = outbox.inspect_dead_letters(limit=args.limit)
+            print(
+                json.dumps(
+                    inspected,
+                    indent=2,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                )
+            )
+            return
+    except Exception as exc:
+        print(f"Pulse outbox: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     pending, dead = outbox.counts()
     print("Outbox")
     print(f"{pending} événement{'s' if pending != 1 else ''}")

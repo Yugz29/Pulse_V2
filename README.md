@@ -106,6 +106,44 @@ Lancer ensemble le daemon, le watcher de fichiers et le watcher d’application 
 
 Le watcher de fichiers observe le dossier depuis lequel `scripts/dev.sh` est lancé. La page locale est disponible sur `http://127.0.0.1:5000/`. Appuyer sur `Ctrl-C` pour arrêter tous les processus.
 
+### Observateur durable de l’application active (macOS)
+
+Le nouvel observateur natif écoute
+`NSWorkspace.didActivateApplicationNotification`, produit un état initial, puis
+écrit chaque changement dans l’outbox avant tout envoi. Il ne collecte que le
+nom lisible de l’application et, lorsqu’il existe, son bundle identifier. Il ne
+lit ni titre de fenêtre, ni document, ni URL, ni contenu d’écran.
+
+Depuis la racine de Pulse Core, lancer le worker existant puis l’observateur
+dans deux terminaux :
+
+```bash
+.venv/bin/python -m daemon_v2.outbox_worker
+swift run --package-path macos_observer PulseApplicationObserver
+```
+
+Si l’observateur est lancé depuis un autre dossier, indiquer explicitement la
+racine :
+
+```bash
+PULSE_CORE_REPO_ROOT=/Users/yugz/Projets/Pulse/Pulse_Core \
+  swift run --package-path /Users/yugz/Projets/Pulse/Pulse_Core/macos_observer \
+  PulseApplicationObserver
+```
+
+Test manuel :
+
+1. lancer le worker et l’observateur avec les commandes ci-dessus ;
+2. passer de Terminal à Visual Studio Code, puis à Google Chrome ;
+3. exécuter `.venv/bin/python -m daemon_v2.producer_outbox status` ;
+4. arrêter temporairement le worker pour inspecter les payloads en attente dans
+   `~/.pulse_core/outbox.sqlite3` et vérifier une seule activité
+   `app_activated` par changement.
+
+L’observateur remet le JSON canonique sur l’entrée standard de
+`python -m daemon_v2.producer_outbox enqueue-json`. Il ne connaît aucune route
+HTTP ; le worker reste seul responsable de la livraison et des retries.
+
 ## Commandes utiles
 
 ```bash

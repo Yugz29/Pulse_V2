@@ -15,6 +15,7 @@ from .daily_trace import (
     render_daily_trace_html,
     render_daily_trace_markdown,
 )
+from .event_logger import log_ingested_event, validation_error_summary
 from .ingest import IgnoredActivity, InvalidActivity, normalize_event
 from .trace_store import EventConflictError
 
@@ -76,6 +77,11 @@ def post_activity():
     except IgnoredActivity:
         return "", 204
     except InvalidActivity as exc:
+        log_ingested_event(
+            activity=None,
+            status="rejected",
+            error=validation_error_summary(exc.field, str(exc)),
+        )
         return (
             jsonify(
                 {
@@ -92,6 +98,10 @@ def post_activity():
     try:
         stored = current_app.config["TRACE_STORE"].append_event(ingested)
     except EventConflictError as exc:
+        log_ingested_event(
+            activity=ingested.activity,
+            status="conflict",
+        )
         return (
             jsonify(
                 {
@@ -106,6 +116,10 @@ def post_activity():
             ),
             409,
         )
+    log_ingested_event(
+        activity=stored.activity,
+        status="duplicate" if stored.duplicate else "created",
+    )
     return (
         jsonify(
             {

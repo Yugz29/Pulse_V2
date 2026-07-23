@@ -31,6 +31,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$repo_root"
+export PULSE_CORE_EVENT_LOG="${PULSE_CORE_EVENT_LOG:-1}"
 "$python" -m daemon_v2.main &
 daemon_pid=$!
 "$python" -m daemon_v2.file_watcher "$workspace" &

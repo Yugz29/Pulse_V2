@@ -1,11 +1,14 @@
 import json
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 
 from daemon_v2.outbox_worker import HttpResult, OutboxWorker, TemporaryDeliveryError
 from daemon_v2.producer_outbox import (
     ProducerOutbox,
     build_terminal_payload,
+    enqueue_json_input,
     enqueue_terminal_input,
     main,
 )
@@ -318,3 +321,163 @@ def test_build_terminal_payload_does_not_regenerate_fields_after_enqueue(tmp_pat
     )
     assert worker.process_one() == "sent"
     assert sent == [payload]
+
+
+def app_activated_payload(event_id="app-event"):
+    return json.dumps(
+        {
+            "event_id": event_id,
+            "schema_version": 1,
+            "type": "app_activated",
+            "producer": {
+                "name": "pulse-macos-application-observer",
+                "version": "1",
+                "instance_id": "stable-observer",
+            },
+            "occurred_at": "2026-07-23T16:00:00.000Z",
+            "details": {
+                "app": "Visual Studio Code",
+                "bundle_id": "com.microsoft.VSCode",
+            },
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def run_outbox_cli(database, command, raw_input, *, extra_arguments=None):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "daemon_v2.producer_outbox",
+            "--database",
+            str(database),
+            command,
+            *(extra_arguments or []),
+        ],
+        cwd=str(__file__.rsplit("/tests_v2/", 1)[0]),
+        input=raw_input,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_enqueue_json_validates_and_persists_exact_canonical_json(tmp_path):
+    database = tmp_path / "outbox.sqlite3"
+    outbox = ProducerOutbox(database)
+    raw = app_activated_payload("exact-app-event")
+
+    event_id = enqueue_json_input(outbox, raw)
+    pending = outbox.oldest()
+
+    assert event_id == "exact-app-event"
+    assert pending is not None
+    assert pending.event_id == "exact-app-event"
+    assert pending.payload_json == raw
+
+
+def test_enqueue_json_rejects_invalid_and_malformed_payloads(tmp_path):
+    database = tmp_path / "outbox.sqlite3"
+    invalid = json.dumps(
+        {
+            "event_id": "invalid",
+            "schema_version": 1,
+            "type": "app_activated",
+            "occurred_at": "2026-07-23T16:00:00Z",
+            "details": {"app": "Terminal"},
+        }
+    )
+
+    invalid_result = run_outbox_cli(database, "enqueue-json", invalid)
+    malformed_result = run_outbox_cli(database, "enqueue-json", "{broken")
+
+    assert invalid_result.returncode != 0
+    assert "missing canonical fields: producer" in invalid_result.stderr
+    assert malformed_result.returncode != 0
+    assert "Pulse outbox:" in malformed_result.stderr
+    assert ProducerOutbox(database).counts() == (0, 0)
+
+
+def test_enqueue_json_cli_success_code_and_no_http_attempt(
+    tmp_path,
+    monkeypatch,
+):
+    database = tmp_path / "outbox.sqlite3"
+    raw = app_activated_payload("cli-app-event")
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("enqueue-json must never use HTTP")
+        ),
+    )
+
+    result = run_outbox_cli(database, "enqueue-json", raw)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "cli-app-event"
+    pending = ProducerOutbox(database).oldest()
+    assert pending is not None
+    assert pending.payload_json == raw
+
+
+def test_instance_id_cli_is_stable_and_non_empty(tmp_path):
+    database = tmp_path / "outbox.sqlite3"
+
+    first = run_outbox_cli(database, "instance-id", "")
+    second = run_outbox_cli(database, "instance-id", "")
+
+    assert first.returncode == second.returncode == 0
+    assert first.stdout.strip()
+    assert second.stdout.strip() == first.stdout.strip()
+
+
+def test_inspect_dead_letter_cli_reports_recent_events_without_mutation(tmp_path):
+    database = tmp_path / "outbox.sqlite3"
+    outbox = ProducerOutbox(database)
+    for event_id, status in (
+        ("older", 400),
+        ("newer", 403),
+    ):
+        outbox.enqueue_payload(
+            app_activated_payload(event_id),
+            created_at=f"2026-07-23T16:00:0{status % 10}+00:00",
+        )
+        pending = outbox.oldest()
+        assert pending is not None
+        outbox.move_to_dead_letter(
+            pending,
+            error=f"unexpected HTTP {status}",
+            http_status=status,
+            response_body="",
+            failed_at=datetime(
+                2026,
+                7,
+                23,
+                16,
+                0,
+                status % 10,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+    result = run_outbox_cli(
+        database,
+        "inspect-dead-letter",
+        "",
+        extra_arguments=["--limit", "1"],
+    )
+
+    assert result.returncode == 0
+    inspected = json.loads(result.stdout)
+    assert inspected == [
+        {
+            "event_id": "newer",
+            "type": "app_activated",
+            "last_error": "unexpected HTTP 403",
+            "http_status": 403,
+            "payload_json": app_activated_payload("newer"),
+        }
+    ]
+    assert outbox.counts() == (0, 2)
