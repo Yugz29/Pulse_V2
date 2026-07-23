@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .git_context import read_git_context
 from .ingest import filter_terminal_command, redact_command
 from .models import CanonicalEvent
 
@@ -229,6 +230,16 @@ def build_terminal_payload(
     occurred_at = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
     if occurred_at.tzinfo is None:
         raise ValueError("finished_at must include a timezone")
+    details: dict[str, Any] = {
+        "command": redacted_command,
+        "exit_code": exit_code,
+        "cwd": cwd,
+        "started_at": started_at,
+        "finished_at": finished_at,
+    }
+    git_context = read_git_context(Path(cwd))
+    if git_context is not None:
+        details["git"] = git_context.as_details()
     event = CanonicalEvent(
         event_id=str(uuid.uuid4()),
         schema_version=1,
@@ -237,13 +248,7 @@ def build_terminal_payload(
         producer_version=DEFAULT_PRODUCER_VERSION,
         producer_instance_id=outbox.producer_instance_id(),
         occurred_at=occurred_at,
-        details={
-            "command": redacted_command,
-            "exit_code": exit_code,
-            "cwd": cwd,
-            "started_at": started_at,
-            "finished_at": finished_at,
-        },
+        details=details,
     )
     payload: dict[str, Any] = {
         "event_id": event.event_id,
