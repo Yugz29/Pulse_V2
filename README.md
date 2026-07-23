@@ -2,6 +2,19 @@
 
 Pulse V2 observe l’activité locale de développement, conserve une trace locale en append-only, regroupe les événements en sessions et reconstruit une vue lisible de la journée en cours.
 
+## Contrat d’événement et compatibilité temporaire
+
+`POST /activities` accepte un contrat canonique versionné contenant
+`event_id`, `schema_version`, `type`, `producer`, `occurred_at` et `details`.
+`occurred_at` vient du producteur et conserve son fuseau ; `recorded_at` est
+créé en UTC par Core lors de la première insertion durable.
+
+Les producteurs historiques qui envoient encore un payload plat passent par
+un adaptateur explicite `pulse-legacy`. Core leur attribue un nouvel
+`event_id` à chaque requête. Ce chemin garantit leur compatibilité, mais **ne
+fournit aucune idempotence entre deux requêtes legacy identiques**. Il est
+destiné à être supprimé après migration des producteurs.
+
 La version actuelle prend en charge trois signaux d’activité :
 
 - `terminal_finished` depuis le watcher Zsh du terminal ;

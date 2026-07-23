@@ -716,3 +716,127 @@ def test_repeated_file_changes_are_raw_in_json_and_coalesced_in_markdown(tmp_pat
     assert "Fichiers modifiés :" in html
     assert "Modified <code>a.py</code> ×3" in html
     assert "Modified <code>b.py</code>" in html
+
+
+def canonical_request(event_id="019c-route", **overrides):
+    payload = {
+        "event_id": event_id,
+        "schema_version": 1,
+        "type": "file_changed",
+        "producer": {
+            "name": "pulse-test",
+            "version": "1.0",
+            "instance_id": "route-tests",
+        },
+        "occurred_at": "2026-07-23T14:32:10.123+02:00",
+        "details": {
+            "path": "/project/main.py",
+            "event": "modified",
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_canonical_retry_is_idempotent_and_preserves_first_recorded_at(tmp_path):
+    database = tmp_path / "trace.db"
+    client = create_app(database).test_client()
+    payload = canonical_request()
+
+    first = client.post("/activities", json=payload)
+    retry = client.post("/activities", json=payload)
+
+    assert first.status_code == 201
+    assert retry.status_code == 200
+    assert first.json["accepted"] is True
+    assert first.json["duplicate"] is False
+    assert retry.json["duplicate"] is True
+    assert retry.json["recorded_at"] == first.json["recorded_at"]
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM activities"
+        ).fetchone()[0] == 1
+
+
+def test_same_event_id_with_different_details_or_type_conflicts(tmp_path):
+    database = tmp_path / "trace.db"
+    client = create_app(database).test_client()
+    payload = canonical_request()
+    assert client.post("/activities", json=payload).status_code == 201
+
+    changed_details = canonical_request()
+    changed_details["details"] = {
+        "path": "/project/other.py",
+        "event": "modified",
+    }
+    details_response = client.post("/activities", json=changed_details)
+
+    changed_type = canonical_request(
+        type="app_activated",
+        details={"app": "Terminal"},
+    )
+    type_response = client.post("/activities", json=changed_type)
+
+    assert details_response.status_code == 409
+    assert details_response.json["error"]["code"] == "event_id_conflict"
+    assert type_response.status_code == 409
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM activities"
+        ).fetchone()[0] == 1
+
+
+def test_different_event_ids_with_same_payload_create_two_rows(tmp_path):
+    database = tmp_path / "trace.db"
+    client = create_app(database).test_client()
+
+    first = client.post("/activities", json=canonical_request("event-a"))
+    second = client.post("/activities", json=canonical_request("event-b"))
+
+    assert first.status_code == second.status_code == 201
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM activities"
+        ).fetchone()[0] == 2
+
+
+def test_json_export_contains_versioned_event_metadata(tmp_path):
+    client = create_app(tmp_path / "trace.db").test_client()
+    response = client.post("/activities", json=canonical_request())
+    assert response.status_code == 201
+
+    trace = client.get("/trace/2026-07-23").json
+    event = trace["sessions"][0]["activities"][0]
+
+    assert event["event_id"] == "019c-route"
+    assert event["schema_version"] == 1
+    assert event["occurred_at"].endswith("+02:00")
+    assert event["recorded_at"].endswith("+00:00")
+    assert event["producer"] == {
+        "name": "pulse-test",
+        "version": "1.0",
+        "instance_id": "route-tests",
+    }
+    assert event["details"]["path"] == "/project/main.py"
+    assert "Modified" in client.get("/trace/2026-07-23.md").get_data(as_text=True)
+
+
+def test_legacy_route_response_and_export_are_explicit(tmp_path):
+    database = tmp_path / "trace.db"
+    client = create_app(database).test_client()
+    payload = {
+        "type": "app_activated",
+        "timestamp": "2026-07-23T12:00:00+02:00",
+        "app": "Terminal",
+    }
+
+    first = client.post("/activities", json=payload)
+    second = client.post("/activities", json=payload)
+    trace = client.get("/trace/2026-07-23").json
+    events = trace["sessions"][0]["activities"]
+
+    assert first.status_code == second.status_code == 201
+    assert first.json["event_id"] != second.json["event_id"]
+    assert len(events) == 2
+    assert all(event["producer"]["name"] == "pulse-legacy" for event in events)
+    assert all(event["occurred_at"].endswith("+02:00") for event in events)

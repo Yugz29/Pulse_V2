@@ -15,7 +15,8 @@ from .daily_trace import (
     render_daily_trace_html,
     render_daily_trace_markdown,
 )
-from .ingest import IgnoredActivity, InvalidActivity, normalize_activity
+from .ingest import IgnoredActivity, InvalidActivity, normalize_event
+from .trace_store import EventConflictError
 
 
 api = Blueprint("pulse", __name__)
@@ -71,23 +72,50 @@ def get_status():
 @api.post("/activities")
 def post_activity():
     try:
-        activity = normalize_activity(request.get_json(silent=True))
+        ingested = normalize_event(request.get_json(silent=True))
     except IgnoredActivity:
         return "", 204
     except InvalidActivity as exc:
-        return jsonify({"error": str(exc)}), 400
+        return (
+            jsonify(
+                {
+                    "error": {
+                        "code": "invalid_event",
+                        "field": exc.field,
+                        "message": str(exc),
+                    }
+                }
+            ),
+            400,
+        )
 
-    stored = current_app.config["TRACE_STORE"].append(activity)
+    try:
+        stored = current_app.config["TRACE_STORE"].append_event(ingested)
+    except EventConflictError as exc:
+        return (
+            jsonify(
+                {
+                    "accepted": False,
+                    "event_id": exc.event_id,
+                    "error": {
+                        "code": "event_id_conflict",
+                        "field": "event_id",
+                        "message": str(exc),
+                    },
+                }
+            ),
+            409,
+        )
     return (
         jsonify(
             {
-                "id": stored.id,
-                "session_id": stored.session_id,
-                "type": activity.activity_type,
-                "occurred_at": activity.occurred_at_utc.isoformat(),
+                "accepted": True,
+                "event_id": stored.event_id,
+                "duplicate": stored.duplicate,
+                "recorded_at": stored.recorded_at.isoformat(),
             }
         ),
-        201,
+        200 if stored.duplicate else 201,
     )
 
 

@@ -1,5 +1,7 @@
 """Small domain models used by the ingestion and trace layers."""
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -32,11 +34,76 @@ class Activity:
 
 
 @dataclass(frozen=True)
+class CanonicalEvent:
+    """Validated producer-owned event data before durable persistence."""
+
+    event_id: str
+    schema_version: int
+    event_type: str
+    producer_name: str
+    producer_version: str | None
+    producer_instance_id: str | None
+    occurred_at: datetime
+    details: dict[str, Any]
+
+
+def canonical_event_fingerprint(event: CanonicalEvent) -> str:
+    """Return the single canonical identity hash used by ingestion and storage."""
+    significant = {
+        "schema_version": event.schema_version,
+        "type": event.event_type,
+        "producer": {
+            "name": event.producer_name,
+            "version": event.producer_version,
+            "instance_id": event.producer_instance_id,
+        },
+        "occurred_at": event.occurred_at.isoformat(),
+        "details": event.details,
+    }
+    serialized = json.dumps(
+        significant,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(serialized.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class IngestedEvent:
+    """Canonical event paired with Core's existing human-facing projection."""
+
+    event: CanonicalEvent
+    activity: Activity
+    fingerprint: str
+    legacy: bool = False
+
+
+@dataclass(frozen=True)
 class StoredActivity:
     id: int
     session_id: str
     activity: Activity
+    event_id: str
+    schema_version: int
+    producer_name: str
+    producer_version: str | None
+    producer_instance_id: str | None
     recorded_at: datetime
+    duplicate: bool = False
+
+    @property
+    def type(self) -> str:
+        return self.activity.activity_type
+
+    @property
+    def occurred_at(self) -> datetime:
+        return self.activity.occurred_at
+
+    @property
+    def details(self) -> dict[str, Any]:
+        return self.activity.details
 
 
 @dataclass(frozen=True)

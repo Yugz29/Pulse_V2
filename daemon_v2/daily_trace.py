@@ -692,8 +692,19 @@ def build_daily_trace(
                 "activities": [
                     {
                         "id": item.id,
+                        "event_id": item.event_id,
+                        "schema_version": item.schema_version,
                         "type": item.activity.activity_type,
-                        "occurred_at": item.activity.occurred_at.astimezone(zone).isoformat(),
+                        # Canonical exports preserve the producer's original
+                        # timezone. Session boundaries above remain localized
+                        # projections for the human-facing daily trace.
+                        "occurred_at": item.activity.occurred_at.isoformat(),
+                        "recorded_at": item.recorded_at.isoformat(),
+                        "producer": {
+                            "name": item.producer_name,
+                            "version": item.producer_version,
+                            "instance_id": item.producer_instance_id,
+                        },
                         "source": item.activity.source,
                         "summary": item.activity.summary,
                         "details": item.activity.details,

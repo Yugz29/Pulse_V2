@@ -1,6 +1,11 @@
 import pytest
 
-from daemon_v2.ingest import IgnoredActivity, InvalidActivity, normalize_activity
+from daemon_v2.ingest import (
+    IgnoredActivity,
+    InvalidActivity,
+    normalize_activity,
+    normalize_event,
+)
 
 
 def test_normalizes_and_redacts_terminal_activity():
@@ -133,3 +138,110 @@ def test_keeps_useful_lines_before_multiline_internal_curl():
     )
 
     assert activity.details["command"] == "git status"
+
+
+def canonical_payload(**overrides):
+    payload = {
+        "event_id": "019c-valid",
+        "schema_version": 1,
+        "type": "file_changed",
+        "producer": {
+            "name": "pulse-test",
+            "version": "1.0",
+            "instance_id": "test-instance",
+        },
+        "occurred_at": "2026-07-23T14:32:10.123+02:00",
+        "details": {
+            "path": "/project/main.py",
+            "event": "modified",
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_normalizes_complete_canonical_event():
+    ingested = normalize_event(canonical_payload(unused_top_level="ignored"))
+
+    assert ingested.event.event_id == "019c-valid"
+    assert ingested.event.schema_version == 1
+    assert ingested.event.producer_name == "pulse-test"
+    assert ingested.event.occurred_at.isoformat() == "2026-07-23T14:32:10.123000+02:00"
+    assert ingested.activity.details == {
+        "path": "/project/main.py",
+        "event": "modified",
+    }
+    assert "unused_top_level" not in ingested.activity.details
+
+
+@pytest.mark.parametrize(
+    ("change", "field"),
+    [
+        ({"event_id": None}, "event_id"),
+        ({"event_id": ""}, "event_id"),
+        ({"schema_version": 0}, "schema_version"),
+        ({"schema_version": -1}, "schema_version"),
+        ({"type": ""}, "type"),
+        ({"producer": None}, "producer"),
+        ({"producer": {"name": ""}}, "producer.name"),
+        ({"occurred_at": "2026-07-23T14:32:10"}, "occurred_at"),
+        ({"occurred_at": "not-a-date"}, "occurred_at"),
+        ({"details": []}, "details"),
+    ],
+)
+def test_rejects_invalid_canonical_fields(change, field):
+    with pytest.raises(InvalidActivity) as raised:
+        normalize_event(canonical_payload(**change))
+
+    assert raised.value.field == field
+
+
+def test_rejects_missing_event_id_on_otherwise_canonical_payload():
+    payload = canonical_payload()
+    del payload["event_id"]
+
+    with pytest.raises(InvalidActivity) as raised:
+        normalize_event(payload)
+
+    assert raised.value.field == "event_id"
+
+
+def test_legacy_timestamp_becomes_occurred_at_and_gets_explicit_producer():
+    ingested = normalize_event(
+        {
+            "type": "app_activated",
+            "timestamp": "2026-07-23T12:00:00+02:00",
+            "app": "Terminal",
+        }
+    )
+
+    assert ingested.legacy is True
+    assert ingested.event.event_id
+    assert ingested.event.schema_version == 1
+    assert ingested.event.producer_name == "pulse-legacy"
+    assert ingested.event.occurred_at.isoformat() == "2026-07-23T12:00:00+02:00"
+
+
+def test_identical_legacy_requests_receive_different_event_ids():
+    payload = {"type": "app_activated", "app": "Terminal"}
+
+    first = normalize_event(payload)
+    second = normalize_event(payload)
+
+    assert first.event.event_id != second.event.event_id
+
+
+def test_rejects_nan_in_canonical_details():
+    with pytest.raises(InvalidActivity) as raised:
+        normalize_event(
+            canonical_payload(
+                details={
+                    "path": "/project/main.py",
+                    "event": "modified",
+                    "invalid_number": float("nan"),
+                }
+            )
+        )
+
+    assert raised.value.field == "details"
+    assert "strictly valid JSON" in str(raised.value)
