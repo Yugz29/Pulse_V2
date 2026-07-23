@@ -7,7 +7,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SUPPORTED_ACTIVITY_TYPES = {"app_activated", "file_changed", "terminal_finished"}
+SYSTEM_ACTIVITY_TYPES = {
+    "screen_locked",
+    "screen_unlocked",
+    "system_sleep",
+    "system_wake",
+}
+SUPPORTED_ACTIVITY_TYPES = {
+    "app_activated",
+    "file_changed",
+    "terminal_finished",
+    *SYSTEM_ACTIVITY_TYPES,
+}
 
 
 @dataclass(frozen=True)

@@ -43,7 +43,7 @@ def _build_status(trace):
     database_path = Path(current_app.config["DATABASE_PATH"])
     return {
         "daemon": "running",
-        "url": "http://127.0.0.1:5000/",
+        "url": f"{current_app.config['CORE_BASE_URL']}/",
         "database_path": str(database_path),
         "database_exists": database_path.exists(),
         "date": trace["date"],

@@ -10,8 +10,10 @@ from collections.abc import Callable
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from .runtime_config import activities_url
 
-ACTIVITIES_URL = "http://127.0.0.1:5000/activities"
+
+ACTIVITIES_URL = activities_url()
 LSAPPINFO = "/usr/bin/lsappinfo"
 _APP_NAME = re.compile(
     r'(?:LSDisplayName|displayname|name)"?\s*=\s*"([^"]+)"',

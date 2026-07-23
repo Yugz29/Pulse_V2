@@ -9,9 +9,18 @@ from typing import TypeAlias
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from .runtime_config import activities_url
 
-ACTIVITIES_URL = "http://127.0.0.1:5000/activities"
-IGNORED_DIRECTORY_NAMES = {".git", ".venv", "__pycache__", ".pytest_cache"}
+
+ACTIVITIES_URL = activities_url()
+IGNORED_DIRECTORY_NAMES = {
+    ".build",
+    ".git",
+    ".pytest_cache",
+    ".swiftpm",
+    ".venv",
+    "__pycache__",
+}
 IGNORED_FILE_NAMES = {".DS_Store"}
 IGNORED_FILE_SUFFIXES = {".pyc", ".db"}
 

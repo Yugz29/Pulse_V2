@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 @testable import ApplicationObserverCore
 
@@ -105,4 +106,59 @@ func payloadOmitsUnavailableBundleIdentifier() throws {
 
     #expect(details["app"] as? String == "Terminal")
     #expect(details["bundle_id"] == nil)
+}
+
+@Test(
+    arguments: [
+        (NSWorkspace.willSleepNotification, SystemEvent.systemSleep),
+        (NSWorkspace.didWakeNotification, SystemEvent.systemWake),
+        (
+            NSWorkspace.sessionDidResignActiveNotification,
+            SystemEvent.screenLocked
+        ),
+        (
+            NSWorkspace.sessionDidBecomeActiveNotification,
+            SystemEvent.screenUnlocked
+        ),
+    ]
+)
+func systemNotificationsProjectToCanonicalEvents(
+    notificationName: Notification.Name,
+    expected: SystemEvent
+) {
+    let projector = SystemNotificationProjector()
+
+    #expect(projector.event(for: notificationName) == expected)
+}
+
+@Test(arguments: SystemEvent.allCases)
+func systemEventPayloadHasEmptyDetails(event: SystemEvent) throws {
+    let builder = try CanonicalEventBuilder(instanceID: "stable-instance")
+    let eventID = UUID(uuidString: "019C0000-0000-7000-8000-000000000002")!
+    let data = try builder.build(
+        systemEvent: event,
+        occurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+        eventID: eventID
+    )
+    let payload = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+    let details = try #require(payload["details"] as? [String: Any])
+
+    #expect(payload["type"] as? String == event.rawValue)
+    #expect(payload["event_id"] as? String == eventID.uuidString.lowercased())
+    #expect(payload["schema_version"] as? Int == 1)
+    #expect(details.isEmpty)
+}
+
+@Test
+func repeatedSystemNotificationsAreSafelyDeduplicated() {
+    var deduplicator = SystemEventDeduplicator()
+
+    for event in SystemEvent.allCases {
+        #expect(!deduplicator.isDuplicate(event))
+        deduplicator.record(event)
+        #expect(deduplicator.isDuplicate(event))
+        #expect(deduplicator.isDuplicate(event))
+    }
 }

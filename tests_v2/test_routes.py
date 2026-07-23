@@ -546,7 +546,7 @@ def test_status_reports_local_paths_and_today_activity(tmp_path):
 
     assert response.status_code == 200
     assert status["daemon"] == "running"
-    assert status["url"] == "http://127.0.0.1:5000/"
+    assert status["url"] == "http://127.0.0.1:8765/"
     assert status["database_path"] == str(database_path)
     assert status["database_exists"] is True
     assert status["event_count"] == 1

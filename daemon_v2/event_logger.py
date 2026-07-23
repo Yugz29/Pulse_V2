@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .ingest import redact_command
-from .models import Activity
+from .models import Activity, SYSTEM_ACTIVITY_TYPES
 
 
 _ENABLED_VALUES = {"1", "true", "yes", "on"}
@@ -43,8 +43,10 @@ def log_ingested_event(
         event_type, summary = _event_label(activity, error=error)
         suffix = "" if status == "created" else f"  [{status}]"
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+        summary_text = f"  {summary}" if summary else ""
         print(
-            f"{timestamp}  {event_type:<{_TYPE_WIDTH}}  {summary}{suffix}",
+            f"{timestamp}  {event_type:<{_TYPE_WIDTH}}"
+            f"{summary_text}{suffix}".rstrip(),
             flush=True,
         )
     except Exception:
@@ -68,6 +70,8 @@ def _event_label(
     if activity.activity_type == "terminal_finished":
         command = redact_command(_safe_text(details.get("command")))
         return activity.activity_type, _truncate(command)
+    if activity.activity_type in SYSTEM_ACTIVITY_TYPES:
+        return activity.activity_type, ""
     return _safe_text(activity.activity_type), "<unknown>"
 
 

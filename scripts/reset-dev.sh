@@ -16,6 +16,8 @@ if [[ -z "$python" ]]; then
 fi
 
 cd "$repo_root"
+status_url="$("$python" -c \
+  'from daemon_v2.runtime_config import status_url; print(status_url())')"
 db_path="$("$python" -c '
 from pathlib import Path
 import sys
@@ -32,8 +34,8 @@ esac
 
 echo "Base Pulse V2 ciblée: $db_path"
 
-if curl --silent --fail --max-time 1 http://127.0.0.1:5000/status >/dev/null 2>&1; then
-  echo "Pulse V2 reset refusé: le daemon répond sur http://127.0.0.1:5000/." >&2
+if curl --silent --fail --max-time 1 "$status_url" >/dev/null 2>&1; then
+  echo "Pulse V2 reset refusé: le daemon répond sur ${status_url%/status}/." >&2
   echo "Arrêtez Pulse avant de supprimer la base." >&2
   exit 1
 fi

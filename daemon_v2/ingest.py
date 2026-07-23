@@ -11,6 +11,7 @@ from .models import (
     CanonicalEvent,
     IngestedEvent,
     SUPPORTED_ACTIVITY_TYPES,
+    SYSTEM_ACTIVITY_TYPES,
     canonical_event_fingerprint,
 )
 
@@ -168,13 +169,18 @@ def normalize_activity(payload: Any) -> Activity:
         source = "terminal"
         status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
         summary = f"Command {status}: {command}"
-    else:
+    elif activity_type == "app_activated":
         app = _required_string(payload, "app")
         details = {"app": app}
         if "title" in payload:
             details["title"] = _required_string(payload, "title")
         source = "application"
         summary = f"Activated {app}"
+    else:
+        assert activity_type in SYSTEM_ACTIVITY_TYPES
+        details = {}
+        source = "system"
+        summary = activity_type
 
     return Activity(
         activity_type=activity_type,

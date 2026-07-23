@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Flask
 
 from .routes import api
+from .runtime_config import core_base_url, core_host, core_port
 from .trace_store import TraceStore
 
 
@@ -25,6 +26,7 @@ def create_app(database_path: str | Path | None = None) -> Flask:
     path = select_database_path(database_path)
     app.config["DATABASE_PATH"] = path
     app.config["TRACE_STORE"] = TraceStore(path)
+    app.config["CORE_BASE_URL"] = core_base_url()
     app.register_blueprint(api)
     return app
 
@@ -32,7 +34,7 @@ def create_app(database_path: str | Path | None = None) -> Flask:
 def main() -> None:
     app = create_app()
     print(f"Pulse V2 database: {app.config['DATABASE_PATH']}", flush=True)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host=core_host(), port=core_port(), debug=False)
 
 
 if __name__ == "__main__":

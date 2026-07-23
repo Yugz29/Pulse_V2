@@ -10,6 +10,8 @@ def test_snapshot_ignores_technical_paths(tmp_path):
     ignored_paths = [
         workspace / ".git" / "index",
         workspace / ".venv" / "state",
+        workspace / ".build" / "debug.yaml",
+        workspace / ".swiftpm" / "configuration",
         workspace / "__pycache__" / "main.pyc",
         workspace / ".pytest_cache" / "state",
         workspace / "trace.db",

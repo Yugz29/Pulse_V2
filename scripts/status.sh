@@ -2,7 +2,6 @@
 
 set -u
 
-url="http://127.0.0.1:5000/status"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd "$script_dir/.." && pwd -P)"
 python="$repo_root/.venv/bin/python"
@@ -16,8 +15,12 @@ if [[ -z "$python" ]]; then
   exit 1
 fi
 
+cd "$repo_root"
+url="$("$python" -c \
+  'from daemon_v2.runtime_config import status_url; print(status_url())')"
+
 if ! response="$(curl --silent --fail --max-time 2 "$url")"; then
-  echo "Pulse V2: daemon inaccessible sur http://127.0.0.1:5000/."
+  echo "Pulse V2: daemon inaccessible sur ${url%/status}/."
   echo "Pulse n'a pas été démarré automatiquement."
   exit 1
 fi

@@ -46,15 +46,6 @@ _pulse_terminal_precmd() {
   print -rn -- "$payload" |
     PYTHONPATH="$_PULSE_TERMINAL_REPO_ROOT" "$_PULSE_TERMINAL_PYTHON" \
       -m daemon_v2.producer_outbox enqueue-terminal >/dev/null 2>&1
-  _pulse_terminal_start_worker
-}
-
-_pulse_terminal_start_worker() {
-  (
-    cd "$_PULSE_TERMINAL_REPO_ROOT" || return
-    PYTHONPATH="$_PULSE_TERMINAL_REPO_ROOT" nohup "$_PULSE_TERMINAL_PYTHON" \
-      -m daemon_v2.outbox_worker >/dev/null 2>&1
-  ) &!
 }
 
 # Removing first makes sourcing this file repeatedly idempotent.
@@ -62,5 +53,3 @@ add-zsh-hook -d preexec _pulse_terminal_preexec 2>/dev/null
 add-zsh-hook -d precmd _pulse_terminal_precmd 2>/dev/null
 add-zsh-hook preexec _pulse_terminal_preexec
 add-zsh-hook precmd _pulse_terminal_precmd
-
-_pulse_terminal_start_worker

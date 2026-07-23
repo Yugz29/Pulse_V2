@@ -4,6 +4,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from daemon_v2.outbox_worker import HttpResult, OutboxWorker, TemporaryDeliveryError
 from daemon_v2.producer_outbox import (
     ProducerOutbox,
@@ -273,6 +275,7 @@ def test_status_cli_reports_outbox_and_dead_letter_counts(
     monkeypatch,
     capsys,
 ):
+    monkeypatch.setenv("PULSE_CORE_PORT", "8765")
     database = tmp_path / "outbox.sqlite3"
     outbox = ProducerOutbox(database)
     outbox.enqueue_payload(canonical_payload("pending"))
@@ -298,6 +301,10 @@ def test_status_cli_reports_outbox_and_dead_letter_counts(
         "1 événement\n"
         "Dead-letter\n"
         "1 événement\n"
+        "Pending: 1\n"
+        "Dead-letter: 1\n"
+        f"Outbox path: {database}\n"
+        "Worker endpoint: http://127.0.0.1:8765/activities\n"
     )
 
 
@@ -481,3 +488,70 @@ def test_inspect_dead_letter_cli_reports_recent_events_without_mutation(tmp_path
         }
     ]
     assert outbox.counts() == (0, 2)
+
+
+def test_clear_dead_letter_by_http_status_preserves_pending_and_other_failures(
+    tmp_path,
+):
+    database = tmp_path / "outbox.sqlite3"
+    outbox = ProducerOutbox(database)
+    for event_id, status in (("airplay", 403), ("invalid", 400)):
+        outbox.enqueue_payload(app_activated_payload(event_id))
+        pending = outbox.oldest()
+        assert pending is not None
+        outbox.move_to_dead_letter(
+            pending,
+            error=f"HTTP {status}",
+            http_status=status,
+            response_body="",
+            failed_at=datetime.now(timezone.utc),
+        )
+    outbox.enqueue_payload(app_activated_payload("still-pending"))
+
+    result = run_outbox_cli(
+        database,
+        "clear-dead-letter",
+        "",
+        extra_arguments=["--http-status", "403"],
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "Deleted dead-letters: 1\n"
+    assert outbox.counts() == (1, 1)
+    assert read_dead_letter(database, "airplay") is None
+    assert read_dead_letter(database, "invalid") is not None
+    assert outbox.oldest().event_id == "still-pending"
+
+
+def test_clear_all_dead_letters_is_explicit_and_reports_zero_when_empty(tmp_path):
+    database = tmp_path / "outbox.sqlite3"
+
+    result = run_outbox_cli(
+        database,
+        "clear-dead-letter",
+        "",
+        extra_arguments=["--all"],
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "Deleted dead-letters: 0\n"
+    assert ProducerOutbox(database).counts() == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [],
+        ["--http-status", "99"],
+        ["--http-status", "403", "--all"],
+    ],
+)
+def test_clear_dead_letter_cli_validates_selection(tmp_path, arguments):
+    result = run_outbox_cli(
+        tmp_path / "outbox.sqlite3",
+        "clear-dead-letter",
+        "",
+        extra_arguments=arguments,
+    )
+
+    assert result.returncode != 0

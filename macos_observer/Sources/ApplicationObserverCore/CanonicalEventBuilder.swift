@@ -22,13 +22,13 @@ private struct ApplicationDetailsPayload: Codable {
     }
 }
 
-private struct CanonicalApplicationEvent: Codable {
+private struct CanonicalEventPayload<Details: Codable>: Codable {
     let eventID: String
     let schemaVersion: Int
     let type: String
     let producer: ProducerPayload
     let occurredAt: String
-    let details: ApplicationDetailsPayload
+    let details: Details
 
     enum CodingKeys: String, CodingKey {
         case eventID = "event_id"
@@ -59,7 +59,7 @@ public struct CanonicalEventBuilder: Sendable {
         occurredAt: Date = Date(),
         eventID: UUID = UUID()
     ) throws -> Data {
-        let event = CanonicalApplicationEvent(
+        let event = CanonicalEventPayload(
             eventID: eventID.uuidString.lowercased(),
             schemaVersion: 1,
             type: "app_activated",
@@ -79,6 +79,28 @@ public struct CanonicalEventBuilder: Sendable {
         return try encoder.encode(event)
     }
 
+    public func build(
+        systemEvent: SystemEvent,
+        occurredAt: Date = Date(),
+        eventID: UUID = UUID()
+    ) throws -> Data {
+        let event = CanonicalEventPayload(
+            eventID: eventID.uuidString.lowercased(),
+            schemaVersion: 1,
+            type: systemEvent.rawValue,
+            producer: ProducerPayload(
+                name: Self.producerName,
+                version: Self.producerVersion,
+                instanceID: instanceID
+            ),
+            occurredAt: Self.timestamp(occurredAt),
+            details: EmptyDetailsPayload()
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(event)
+    }
+
     private static func timestamp(_ date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -90,3 +112,5 @@ public struct CanonicalEventBuilder: Sendable {
         case emptyInstanceID
     }
 }
+
+private struct EmptyDetailsPayload: Codable {}

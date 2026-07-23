@@ -9,16 +9,19 @@ let repositoryRoot = URL(
 )
 
 do {
-    let observer = try ApplicationObserver(repositoryRoot: repositoryRoot)
-    observer.start()
+    let applicationObserver = try ApplicationObserver(repositoryRoot: repositoryRoot)
+    let systemObserver = try SystemObserver(repositoryRoot: repositoryRoot)
+    applicationObserver.start()
+    systemObserver.start()
 
     signal(SIGINT, SIG_IGN)
     signal(SIGTERM, SIG_IGN)
     let interruptSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
     let terminateSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
     let stop: @Sendable () -> Void = {
-        observer.stop()
-        CFRunLoopStop(CFRunLoopGetMain())
+        systemObserver.stop()
+        applicationObserver.stop()
+        exit(0)
     }
     interruptSource.setEventHandler(handler: stop)
     terminateSource.setEventHandler(handler: stop)

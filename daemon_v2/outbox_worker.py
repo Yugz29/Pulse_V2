@@ -15,9 +15,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .producer_outbox import PendingEvent, ProducerOutbox, default_outbox_path
+from .runtime_config import activities_url
 
 
-DEFAULT_ACTIVITIES_URL = "http://127.0.0.1:5000/activities"
 MAX_BACKOFF_SECONDS = 300
 
 
@@ -140,11 +140,12 @@ def validate_ack(result: HttpResult, expected_event_id: str) -> str | None:
 def post_payload(
     payload_json: str,
     *,
-    url: str = DEFAULT_ACTIVITIES_URL,
+    url: str | None = None,
     timeout: float = 2.0,
 ) -> HttpResult:
+    selected_url = url or activities_url()
     request = Request(
-        url,
+        selected_url,
         data=payload_json.encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -174,7 +175,7 @@ def run_forever(worker: OutboxWorker, *, poll_interval: float = 1.0) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Pulse outbox delivery worker")
     parser.add_argument("--database", type=Path, default=default_outbox_path())
-    parser.add_argument("--url", default=DEFAULT_ACTIVITIES_URL)
+    parser.add_argument("--url", default=activities_url())
     parser.add_argument("--once", action="store_true")
     return parser
 

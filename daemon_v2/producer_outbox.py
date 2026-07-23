@@ -16,6 +16,7 @@ from typing import Any
 from .git_context import read_git_context
 from .ingest import filter_terminal_command, normalize_event, redact_command
 from .models import CanonicalEvent
+from .runtime_config import activities_url
 from .workspace_context import read_workspace_context
 
 
@@ -235,6 +236,19 @@ class ProducerOutbox:
             )
         return inspected
 
+    def clear_dead_letters(self, *, http_status: int | None = None) -> int:
+        """Delete only dead letters, optionally restricted to one HTTP status."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if http_status is None:
+                cursor = connection.execute("DELETE FROM dead_letters")
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM dead_letters WHERE http_status = ?",
+                    (http_status,),
+                )
+            return int(cursor.rowcount)
+
 
 def default_outbox_path() -> Path:
     configured = os.environ.get("PULSE_CORE_OUTBOX_PATH")
@@ -373,6 +387,20 @@ def _pending_from_row(row: sqlite3.Row) -> PendingEvent:
     )
 
 
+def _http_status(value: str) -> int:
+    try:
+        status = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "HTTP status must be an integer between 100 and 599"
+        ) from exc
+    if not 100 <= status <= 599:
+        raise argparse.ArgumentTypeError(
+            "HTTP status must be an integer between 100 and 599"
+        )
+    return status
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Pulse producer outbox")
     parser.add_argument("--database", type=Path, default=None)
@@ -394,6 +422,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="show recent dead letters without replaying them",
     )
     inspect_parser.add_argument("--limit", type=int, default=10)
+    clear_parser = subparsers.add_parser(
+        "clear-dead-letter",
+        help="explicitly delete selected dead letters without touching pending events",
+    )
+    clear_selection = clear_parser.add_mutually_exclusive_group(required=True)
+    clear_selection.add_argument("--http-status", type=_http_status)
+    clear_selection.add_argument(
+        "--all",
+        action="store_true",
+        help="delete every dead letter",
+    )
     subparsers.add_parser("status", help="show pending and dead-letter counts")
     return parser
 
@@ -424,6 +463,12 @@ def main() -> None:
                 )
             )
             return
+        if args.command == "clear-dead-letter":
+            deleted = outbox.clear_dead_letters(
+                http_status=None if args.all else args.http_status
+            )
+            print(f"Deleted dead-letters: {deleted}")
+            return
     except Exception as exc:
         print(f"Pulse outbox: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
@@ -432,6 +477,10 @@ def main() -> None:
     print(f"{pending} événement{'s' if pending != 1 else ''}")
     print("Dead-letter")
     print(f"{dead} événement{'s' if dead != 1 else ''}")
+    print(f"Pending: {pending}")
+    print(f"Dead-letter: {dead}")
+    print(f"Outbox path: {Path(outbox.database_path).expanduser()}")
+    print(f"Worker endpoint: {activities_url()}")
 
 
 if __name__ == "__main__":
