@@ -16,6 +16,7 @@ from typing import Any
 from .git_context import read_git_context
 from .ingest import filter_terminal_command, redact_command
 from .models import CanonicalEvent
+from .workspace_context import read_workspace_context
 
 
 DEFAULT_PRODUCER_NAME = "pulse-zsh"
@@ -240,6 +241,12 @@ def build_terminal_payload(
     git_context = read_git_context(Path(cwd))
     if git_context is not None:
         details["git"] = git_context.as_details()
+    workspace_context = read_workspace_context(
+        Path(cwd),
+        git_context=git_context,
+    )
+    if workspace_context is not None:
+        details["workspace"] = workspace_context.as_details()
     event = CanonicalEvent(
         event_id=str(uuid.uuid4()),
         schema_version=1,
