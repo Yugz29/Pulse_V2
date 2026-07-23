@@ -3,12 +3,14 @@ import ApplicationObserverCore
 import Foundation
 
 final class SystemObserver: @unchecked Sendable {
-    private let notificationCenter = NSWorkspace.shared.notificationCenter
+    private let workspaceCenter = NSWorkspace.shared.notificationCenter
+    private let distributedCenter = DistributedNotificationCenter.default()
     private let projector = SystemNotificationProjector()
     private let bridge: OutboxBridge
     private let builder: CanonicalEventBuilder
     private var deduplicator = SystemEventDeduplicator()
-    private var tokens: [NSObjectProtocol] = []
+    private var workspaceTokens: [NSObjectProtocol] = []
+    private var distributedTokens: [NSObjectProtocol] = []
 
     init(repositoryRoot: URL) throws {
         let bridge = OutboxBridge(repositoryRoot: repositoryRoot)
@@ -17,35 +19,45 @@ final class SystemObserver: @unchecked Sendable {
     }
 
     func start() {
-        let names: [Notification.Name] = [
-            NSWorkspace.willSleepNotification,
-            NSWorkspace.didWakeNotification,
-            NSWorkspace.sessionDidResignActiveNotification,
-            NSWorkspace.sessionDidBecomeActiveNotification,
-        ]
-        tokens = names.map { name in
-            notificationCenter.addObserver(
-                forName: name,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                self?.observe(notification.name)
+        workspaceTokens =
+            SystemNotificationProjector.workspaceNotificationNames.map { name in
+                workspaceCenter.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] notification in
+                    self?.observe(notification.name)
+                }
             }
-        }
+        distributedTokens =
+            SystemNotificationProjector.distributedNotificationNames.map { name in
+                distributedCenter.addObserver(
+                    forName: name,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] notification in
+                    self?.observe(notification.name)
+                }
+            }
     }
 
     func stop() {
-        for token in tokens {
-            notificationCenter.removeObserver(token)
+        for token in workspaceTokens {
+            workspaceCenter.removeObserver(token)
         }
-        tokens.removeAll()
+        for token in distributedTokens {
+            distributedCenter.removeObserver(token)
+        }
+        workspaceTokens.removeAll()
+        distributedTokens.removeAll()
     }
 
     private func observe(_ notificationName: Notification.Name) {
-        guard let event = projector.event(for: notificationName),
-              !deduplicator.isDuplicate(event) else {
+        guard let event = projector.event(for: notificationName) else {
             return
         }
+        logReceived(event)
+        guard !deduplicator.isDuplicate(event) else { return }
         do {
             let payload = try builder.build(systemEvent: event)
             try bridge.enqueue(payload: payload)
@@ -55,6 +67,19 @@ final class SystemObserver: @unchecked Sendable {
                 Data("Pulse SystemObserver: \(error)\n".utf8)
             )
         }
+    }
+
+    private func logReceived(_ event: SystemEvent) {
+        let message: String
+        switch event {
+        case .screenLocked:
+            message = "[macos-observer] received screen lock notification\n"
+        case .screenUnlocked:
+            message = "[macos-observer] received screen unlock notification\n"
+        default:
+            return
+        }
+        FileHandle.standardError.write(Data(message.utf8))
     }
 
     deinit {

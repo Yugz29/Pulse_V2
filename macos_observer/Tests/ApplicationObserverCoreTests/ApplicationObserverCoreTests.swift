@@ -113,11 +113,11 @@ func payloadOmitsUnavailableBundleIdentifier() throws {
         (NSWorkspace.willSleepNotification, SystemEvent.systemSleep),
         (NSWorkspace.didWakeNotification, SystemEvent.systemWake),
         (
-            NSWorkspace.sessionDidResignActiveNotification,
+            SystemNotificationProjector.screenLockedNotification,
             SystemEvent.screenLocked
         ),
         (
-            NSWorkspace.sessionDidBecomeActiveNotification,
+            SystemNotificationProjector.screenUnlockedNotification,
             SystemEvent.screenUnlocked
         ),
     ]
@@ -129,6 +129,26 @@ func systemNotificationsProjectToCanonicalEvents(
     let projector = SystemNotificationProjector()
 
     #expect(projector.event(for: notificationName) == expected)
+}
+
+@Test
+func lockNotificationsUseTheDistributedNotificationCenterNames() {
+    #expect(
+        SystemNotificationProjector.distributedNotificationNames == [
+            Notification.Name("com.apple.screenIsLocked"),
+            Notification.Name("com.apple.screenIsUnlocked"),
+        ]
+    )
+    #expect(
+        !SystemNotificationProjector.workspaceNotificationNames.contains(
+            NSWorkspace.sessionDidResignActiveNotification
+        )
+    )
+    #expect(
+        !SystemNotificationProjector.workspaceNotificationNames.contains(
+            NSWorkspace.sessionDidBecomeActiveNotification
+        )
+    )
 }
 
 @Test(arguments: SystemEvent.allCases)

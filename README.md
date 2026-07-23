@@ -163,13 +163,21 @@ L’observateur natif écoute
 document, URL ou contenu d’écran.
 
 Le même processus écoute aussi les transitions publiques macOS de veille,
-réveil et activité de session. Test manuel :
+réveil et les notifications distribuées système de verrouillage. Les
+identifiants `com.apple.screenIsLocked` et `com.apple.screenIsUnlocked` ne sont
+pas exposés comme constantes AppKit fortement typées ; Pulse les observe via
+`DistributedNotificationCenter`. Test manuel :
 
-1. lancer `make dev` ;
+1. lancer `make dev-reload` ;
 2. verrouiller la session avec `Ctrl-Cmd-Q`, puis la déverrouiller ;
 3. mettre le Mac en veille, puis le réveiller ;
 4. vérifier quatre lignes `screen_locked`, `screen_unlocked`, `system_sleep`
    et `system_wake`, chacune suivie d’un `POST /activities` en HTTP 201.
+
+Pendant le diagnostic lock/unlock, la réception brute est aussi visible sur
+stderr sous la forme `[macos-observer] received screen lock notification` ou
+`received screen unlock notification`. Un doublon reçu est journalisé mais
+n’est pas publié une seconde fois.
 
 Ces événements ont un objet `details` vide. L’observateur ne fait aucun appel
 HTTP : il remet leur JSON canonique à la même outbox durable que les événements

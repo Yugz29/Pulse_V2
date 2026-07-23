@@ -9,6 +9,23 @@ public enum SystemEvent: String, CaseIterable, Sendable {
 }
 
 public struct SystemNotificationProjector: Sendable {
+    // macOS emits these through DistributedNotificationCenter, but AppKit
+    // does not expose strongly typed constants for their names.
+    public static let screenLockedNotification = Notification.Name(
+        "com.apple.screenIsLocked"
+    )
+    public static let screenUnlockedNotification = Notification.Name(
+        "com.apple.screenIsUnlocked"
+    )
+    public static let workspaceNotificationNames: [Notification.Name] = [
+        NSWorkspace.willSleepNotification,
+        NSWorkspace.didWakeNotification,
+    ]
+    public static let distributedNotificationNames: [Notification.Name] = [
+        screenLockedNotification,
+        screenUnlockedNotification,
+    ]
+
     public init() {}
 
     public func event(for notificationName: Notification.Name) -> SystemEvent? {
@@ -17,9 +34,9 @@ public struct SystemNotificationProjector: Sendable {
             return .systemSleep
         case NSWorkspace.didWakeNotification:
             return .systemWake
-        case NSWorkspace.sessionDidResignActiveNotification:
+        case Self.screenLockedNotification:
             return .screenLocked
-        case NSWorkspace.sessionDidBecomeActiveNotification:
+        case Self.screenUnlockedNotification:
             return .screenUnlocked
         default:
             return nil
