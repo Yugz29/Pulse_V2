@@ -171,8 +171,8 @@ def test_app_activated_is_readable_in_markdown_and_html(tmp_path):
     html = client.get("/").get_data(as_text=True)
     assert expected in markdown
     assert expected in html
-    assert "## Activité passive" in markdown
-    assert "<h2>Activité passive</h2>" in html
+    assert "## Activité non attribuée" in markdown
+    assert "<h2>Activité non attribuée</h2>" in html
     assert expected_summary in markdown
     assert (
         "<dt>Apps principales</dt>"

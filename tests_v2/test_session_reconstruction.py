@@ -88,13 +88,13 @@ def test_real_work_starts_a_session(event_type):
 
 
 def test_unlock_or_wake_alone_does_not_start_a_session():
-    sessions, passive = reconstruct(
+    sessions, unresolved = reconstruct(
         event("screen_unlocked", 0),
         event("system_wake", 1, event_id=2),
     )
 
     assert sessions == []
-    assert passive == []
+    assert unresolved == []
 
 
 @pytest.mark.parametrize("end_type", ["screen_locked", "system_sleep"])
@@ -180,7 +180,7 @@ def test_workspace_change_after_short_interruption_splits_session():
 
 
 def test_application_context_never_starts_work_session():
-    sessions, passive = reconstruct(
+    sessions, unresolved = reconstruct(
         event(
             "app_activated",
             0,
@@ -189,7 +189,7 @@ def test_application_context_never_starts_work_session():
     )
 
     assert sessions == []
-    assert len(passive) == 1
+    assert len(unresolved) == 1
 
 
 def test_interruption_threshold_is_configurable(monkeypatch):
@@ -361,26 +361,30 @@ def test_aggregates_unique_files_apps_and_total_events():
     assert session["applications"] == ["Terminal", "Visual Studio Code"]
 
 
-def test_passive_application_between_strong_events_is_confirmed():
+def test_unresolved_applications_are_promoted_by_later_same_workspace_work():
     middle = event("app_activated", 1, {"app": "Safari"}, 2)
-    sessions, _passive = reconstruct(
+    code = event("app_activated", 2, {"app": "Visual Studio Code"}, 3)
+    sessions, unresolved = reconstruct(
         event("terminal_finished", 0, {**workspace(PULSE), "command": "make"}),
         middle,
+        code,
         event(
             "terminal_finished",
-            2,
-            {**workspace(PULSE), "command": "pytest"},
             3,
+            {**workspace(PULSE), "command": "pytest"},
+            4,
         ),
     )
 
     assert middle in sessions[0]["activities"]
-    assert sessions[0]["applications"] == ["Safari"]
+    assert code in sessions[0]["activities"]
+    assert sessions[0]["applications"] == ["Safari", "Visual Studio Code"]
+    assert unresolved == []
 
 
-def test_trailing_passive_application_is_not_beyond_session_end():
+def test_trailing_unresolved_application_is_not_beyond_session_end():
     trailing = event("app_activated", 1, {"app": "Safari"}, 2)
-    sessions, passive = reconstruct(
+    sessions, unresolved = reconstruct(
         event("terminal_finished", 0, {**workspace(PULSE), "command": "pytest"}),
         trailing,
     )
@@ -396,7 +400,77 @@ def test_trailing_passive_application_is_not_beyond_session_end():
         <= datetime.fromisoformat(session["ended_at"])
         for activity in session["activities"]
     )
-    assert trailing in passive[0]["activities"]
+    assert trailing in unresolved[0]["activities"]
+
+
+def test_rapid_application_changes_are_user_activity_without_workspace():
+    terminal = event("app_activated", 0, {"app": "Terminal"})
+    code = event("app_activated", 1, {"app": "Visual Studio Code"}, 2)
+    safari = event("app_activated", 2, {"app": "Safari"}, 3)
+
+    sessions, unresolved = reconstruct(terminal, code, safari)
+
+    assert sessions == []
+    assert len(unresolved) == 1
+    assert unresolved[0]["project_name"] is None
+    assert unresolved[0]["workspace_root"] is None
+    assert unresolved[0]["applications"] == [
+        "Terminal",
+        "Visual Studio Code",
+        "Safari",
+    ]
+    assert unresolved[0]["activities"] == [terminal, code, safari]
+    assert unresolved[0]["started_at"] == terminal["occurred_at"]
+    assert unresolved[0]["ended_at"] == safari["occurred_at"]
+
+
+def test_unresolved_applications_are_not_assigned_across_workspace_change():
+    terminal = event("app_activated", 1, {"app": "Terminal"}, 2)
+    code = event("app_activated", 2, {"app": "Visual Studio Code"}, 3)
+
+    sessions, unresolved = reconstruct(
+        event("terminal_finished", 0, {**workspace(PULSE), "command": "make"}),
+        terminal,
+        code,
+        event(
+            "terminal_finished",
+            3,
+            {**workspace(DEVNOTE), "command": "npm test"},
+            4,
+        ),
+    )
+
+    assert [session["workspace_root"] for session in sessions] == [
+        PULSE,
+        DEVNOTE,
+    ]
+    assert terminal not in sessions[0]["activities"]
+    assert code not in sessions[1]["activities"]
+    assert unresolved[0]["activities"] == [terminal, code]
+
+
+@pytest.mark.parametrize(
+    ("stop_type", "resume_type"),
+    [("screen_locked", "screen_unlocked"), ("system_sleep", "system_wake")],
+)
+def test_system_transitions_are_interruptions_not_unresolved_activity(
+    stop_type,
+    resume_type,
+):
+    sessions, unresolved = reconstruct(
+        event("terminal_finished", 0, {**workspace(PULSE), "command": "make"}),
+        event(stop_type, 1, event_id=2),
+        event(resume_type, 2, event_id=3),
+        event(
+            "terminal_finished",
+            3,
+            {**workspace(PULSE), "command": "pytest"},
+            4,
+        ),
+    )
+
+    assert unresolved == []
+    assert sessions[0]["interruptions"][0]["type"] == stop_type
 
 
 def test_interruption_durations_and_activity_bounds_remain_coherent():
@@ -474,6 +548,7 @@ def test_json_and_markdown_exports_include_session_metadata(tmp_path):
     session = trace["work_sessions"][0]
     markdown = render_daily_trace_markdown(trace, archive_mode=True)
 
+    assert trace["passive_sessions"] is trace["unresolved_sessions"]
     assert session["project_name"] == "Pulse_Core"
     assert session["duration_seconds"] == 1200
     assert session["end_reason"] == "screen_locked"

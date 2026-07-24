@@ -357,14 +357,36 @@ def _session_from_activities(
     session_id: str,
     zone: tzinfo,
 ) -> dict[str, Any]:
+    started_at = datetime.fromisoformat(activities[0]["occurred_at"]).astimezone(
+        zone
+    )
+    ended_at = datetime.fromisoformat(activities[-1]["occurred_at"]).astimezone(
+        zone
+    )
+    applications: list[str] = []
+    for activity in activities:
+        app = activity.get("details", {}).get("app")
+        if (
+            isinstance(app, str)
+            and app
+            and app not in IGNORED_APP_NAMES_FOR_RENDERING
+            and app not in applications
+        ):
+            applications.append(app)
     return {
         "id": session_id,
-        "started_at": datetime.fromisoformat(
-            activities[0]["occurred_at"]
-        ).astimezone(zone).isoformat(),
-        "ended_at": datetime.fromisoformat(
-            activities[-1]["occurred_at"]
-        ).astimezone(zone).isoformat(),
+        "activity_kind": "user_presence",
+        "workspace_attribution": "unresolved",
+        "project_name": None,
+        "workspace_root": None,
+        "started_at": started_at.isoformat(),
+        "ended_at": ended_at.isoformat(),
+        "duration_seconds": max(
+            0,
+            int((ended_at - started_at).total_seconds()),
+        ),
+        "applications": applications,
+        "event_count": len(activities),
         "activity_count": len(activities),
         "activities": activities,
     }
@@ -416,6 +438,12 @@ def reconstruct_session_views(
         work_sessions.append(
             {
                 "id": f"work-{len(work_sessions) + 1}",
+                "activity_kind": "work",
+                "workspace_attribution": (
+                    "assigned"
+                    if current["workspace_root"] is not None
+                    else "unknown"
+                ),
                 **_session_metadata(
                     session_activities,
                     started_at=current["started_at"],
@@ -443,7 +471,7 @@ def reconstruct_session_views(
             "workspace_confidence": workspace.confidence,
             "workspace_observed_at": occurred_at,
             "activities": [activity],
-            "pending_passive": [],
+            "pending_unresolved": [],
             "interruptions": [],
             "pending_interruption": None,
         }
@@ -495,10 +523,10 @@ def reconstruct_session_views(
         current["workspace_confidence"] = incoming.confidence
         current["workspace_observed_at"] = occurred_at
 
-    def confirm_pending_passive() -> None:
+    def confirm_pending_unresolved() -> None:
         assert current is not None
-        current["activities"].extend(current["pending_passive"])
-        current["pending_passive"] = []
+        current["activities"].extend(current["pending_unresolved"])
+        current["pending_unresolved"] = []
 
     def completed_interruption(
         pending: dict[str, Any],
@@ -602,7 +630,7 @@ def reconstruct_session_views(
                 close_current(occurred_at, "workspace_changed")
                 start_session(activity, occurred_at)
                 continue
-            confirm_pending_passive()
+            confirm_pending_unresolved()
             if transition == "promote":
                 promote_workspace(workspace, occurred_at)
             current["activities"].append(activity)
@@ -618,7 +646,7 @@ def reconstruct_session_views(
                     <= WEAK_CONTEXT_WINDOW
                 )
             ):
-                current["pending_passive"].append(activity)
+                current["pending_unresolved"].append(activity)
 
     if current is not None:
         pending = current["pending_interruption"]
@@ -641,7 +669,7 @@ def reconstruct_session_views(
             reason = "inactivity"
         close_current(current["last_work_at"], reason)
 
-    passive_activities = [
+    unresolved_activities = [
         activity
         for activity in activities
         if id(activity) not in assigned_ids
@@ -658,30 +686,37 @@ def reconstruct_session_views(
             in IGNORED_APP_NAMES_FOR_RENDERING
         )
     ]
-    passive_groups: list[list[dict[str, Any]]] = []
-    for activity in passive_activities:
-        if not passive_groups:
-            passive_groups.append([activity])
+    unresolved_groups: list[list[dict[str, Any]]] = []
+    for activity in unresolved_activities:
+        if not unresolved_groups:
+            unresolved_groups.append([activity])
             continue
         previous_at = datetime.fromisoformat(
-            passive_groups[-1][-1]["occurred_at"]
+            unresolved_groups[-1][-1]["occurred_at"]
         )
         current_at = datetime.fromisoformat(activity["occurred_at"])
         if current_at - previous_at <= WORK_SESSION_GAP:
-            passive_groups[-1].append(activity)
+            unresolved_groups[-1].append(activity)
         else:
-            passive_groups.append([activity])
-    passive_sessions = [
-        _session_from_activities(group, f"passive-{index}", trace_zone)
-        for index, group in enumerate(passive_groups, start=1)
+            unresolved_groups.append([activity])
+    unresolved_sessions = [
+        _session_from_activities(group, f"unresolved-{index}", trace_zone)
+        for index, group in enumerate(unresolved_groups, start=1)
     ]
-    return work_sessions, passive_sessions
+    return work_sessions, unresolved_sessions
 
 
-def _passive_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+def _unresolved_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    if "unresolved_sessions" in trace:
+        return trace["unresolved_sessions"]
     if "passive_sessions" in trace:
         return trace["passive_sessions"]
     return reconstruct_session_views(trace)[1]
+
+
+def _passive_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Deprecated compatibility alias for unresolved activity."""
+    return _unresolved_sessions(trace)
 
 
 def _displayed_sessions(trace: dict[str, Any]) -> list[dict[str, Any]]:

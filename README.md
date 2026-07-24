@@ -408,6 +408,14 @@ interruptions candidates. Une reprise dans le même workspace conserve la
 session lorsque l’interruption ne dépasse pas cinq minutes. Ce seuil peut être
 adapté avec `PULSE_SESSION_INTERRUPTION_MINUTES`.
 
+Les activations d’application représentent une présence utilisateur, pas une
+preuve de projet. Celles qui ne sont pas confirmées par une activité de travail
+ultérieure sont exposées dans `unresolved_sessions`, sans workspace. Une
+activité forte ultérieure dans la même session peut les y rattacher
+rétroactivement ; une activation isolée ne prolonge jamais `ended_at`.
+L’ancien champ JSON `passive_sessions` est conservé temporairement comme alias
+déprécié de `unresolved_sessions` pour les clients existants.
+
 Sur macOS, `make dev` lance `PulseApplicationObserver`, fondé sur
 `NSWorkspace`. L’ancien watcher Python n’est plus lancé par le superviseur.
 

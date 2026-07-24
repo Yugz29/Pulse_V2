@@ -130,10 +130,10 @@ def test_renders_observed_session_durations(tmp_path):
     assert "<h2>Session 2 · 18:04–19:06 · 1h02</h2>" in html
 
 
-def test_moves_short_app_only_sessions_to_passive_activity(tmp_path):
+def test_moves_short_app_only_sessions_to_unresolved_activity(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     hidden_app_times = [time(1, 32), time(2, 13), time(11, 17)]
-    passive_groups = [
+    unresolved_groups = [
         (time(1, 42), ["Safari", "ChatGPT"]),
         (time(2, 23), ["Safari"]),
         (
@@ -142,7 +142,7 @@ def test_moves_short_app_only_sessions_to_passive_activity(tmp_path):
         ),
     ]
     for hidden_time, (start_time, apps) in zip(
-        hidden_app_times, passive_groups, strict=True
+        hidden_app_times, unresolved_groups, strict=True
     ):
         store.append(
             Activity(
@@ -183,19 +183,19 @@ def test_moves_short_app_only_sessions_to_passive_activity(tmp_path):
     html = render_daily_trace_html(trace, archive_mode=True)
 
     assert "- Sessions de travail : 1" in markdown
-    assert "- Activités passives : 3" in markdown
+    assert "- Activités non attribuées : 8" in markdown
     assert markdown.count("## Session ") == 1
     assert "## Session 1 — 12:30–12:30 · 0 min" in markdown
     assert "- 01:42 · Safari, ChatGPT" in markdown
     assert "- 02:23 · Safari" in markdown
     assert "- 11:27 · ChatGPT, Pages, Google Chrome, Safari, Code" in markdown
-    assert markdown.index("## Activité passive") > markdown.index("## Session 1")
+    assert markdown.index("## Activité non attribuée") > markdown.index("## Session 1")
     assert "<dt>Sessions de travail</dt><dd>1</dd>" in html
-    assert "<dt>Activités passives</dt><dd>3</dd>" in html
+    assert "<dt>Activités non attribuées</dt><dd>8</dd>" in html
     assert html.count('<section class="session" id="session-') == 1
 
 
-def test_day_with_only_passive_activity_has_no_work_session(tmp_path):
+def test_day_with_only_unresolved_activity_has_no_work_session(tmp_path):
     store = TraceStore(tmp_path / "pulse.sqlite3")
     store.append(
         Activity(
@@ -212,11 +212,11 @@ def test_day_with_only_passive_activity_has_no_work_session(tmp_path):
     html = render_daily_trace_html(trace, archive_mode=True)
 
     assert "- Sessions de travail : 0" in markdown
-    assert "- Activités passives : 1" in markdown
+    assert "- Activités non attribuées : 1" in markdown
     assert "## Session " not in markdown
     assert "- 09:00 · Safari" in markdown
     assert '<section class="session" id="session-' not in html
-    assert "<h2>Activité passive</h2>" in html
+    assert "<h2>Activité non attribuée</h2>" in html
 
 
 def test_short_terminal_and_file_sessions_remain_work_sessions(tmp_path):
@@ -251,7 +251,7 @@ def test_short_terminal_and_file_sessions_remain_work_sessions(tmp_path):
     assert summary["session_count"] == 2
     assert summary["passive_activity_count"] == 0
     assert markdown.count("## Session ") == 2
-    assert "## Activité passive" not in markdown
+    assert "## Activité non attribuée" not in markdown
 
 
 def test_marks_current_day_last_session_in_progress(tmp_path):
@@ -323,7 +323,7 @@ def test_weak_activity_does_not_extend_or_keep_work_session_open(tmp_path):
     assert f"## Session 1 — {strong_time}–{strong_time} · 0 min" in markdown
     assert "· en cours" not in markdown
     assert "· en cours</h2>" not in html
-    assert "## Activité passive" in markdown
+    assert "## Activité non attribuée" in markdown
 
 
 def test_strong_activity_every_ten_minutes_keeps_one_session(tmp_path):
@@ -396,7 +396,7 @@ def test_weak_activity_does_not_join_strong_activity_across_long_pause(
     assert summary["passive_activity_count"] == 1
     assert "## Session 1 — 18:00–18:00 · 0 min" in markdown
     assert "## Session 2 — 19:00–19:00 · 0 min" in markdown
-    assert "## Activité passive" in markdown
+    assert "## Activité non attribuée" in markdown
 
 
 def test_renders_empty_daily_trace():
@@ -413,7 +413,7 @@ def test_renders_empty_daily_trace():
     assert "## Aujourd’hui" in markdown
     assert "- Projet probable : Non détecté" in markdown
     assert "- Sessions de travail : 0" in markdown
-    assert "- Activités passives : 0" in markdown
+    assert "- Activités non attribuées : 0" in markdown
     assert "- Événements : 0" in markdown
     assert "- Dernière activité utile : Non détectée" in markdown
     assert markdown.endswith("_Aucune activité._\n")
@@ -691,10 +691,10 @@ def test_does_not_coalesce_app_activations_across_sessions(tmp_path):
 
     assert trace["session_count"] == 2
     assert "## Session " not in markdown
-    assert "## Activité passive" in markdown
+    assert "## Activité non attribuée" in markdown
     assert "- 08:00 · ChatGPT" in markdown
     assert "- 09:00 · ChatGPT" in markdown
-    assert "<h2>Activité passive</h2>" in html
+    assert "<h2>Activité non attribuée</h2>" in html
     assert "Résumé de session" not in markdown
     assert "Résumé de session" not in html
 
@@ -782,7 +782,7 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "Dernière activité utile : terminal\\_finished — git push",
         "## Aujourd’hui",
         "Sessions de travail : 3",
-        "Activités passives : 1",
+        "Activités non attribuées : 3",
         "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
@@ -800,7 +800,7 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
         "<h2>Aujourd’hui</h2>",
         "<dt>Sessions de travail</dt><dd>3</dd>",
-        "<dt>Activités passives</dt><dd>1</dd>",
+        "<dt>Activités non attribuées</dt><dd>3</dd>",
         "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
@@ -1615,14 +1615,14 @@ def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
         "loginwindow"
     ]
     assert "- Sessions de travail : 1" in markdown
-    assert "- Activités passives : 1" in markdown
+    assert "- Activités non attribuées : 1" in markdown
     assert markdown.count("## Session ") == 1
     assert "Apps principales : ChatGPT" in markdown
     assert "- 09:01 · ChatGPT" in markdown
     assert "Finder" not in markdown
     assert "loginwindow" not in markdown
     assert "<dt>Sessions de travail</dt><dd>1</dd>" in html
-    assert "<dt>Activités passives</dt><dd>1</dd>" in html
+    assert "<dt>Activités non attribuées</dt><dd>1</dd>" in html
     assert html.count('<section class="session" id="session-') == 1
     assert "<li>09:01 · ChatGPT</li>" in html
     assert "Finder" not in html

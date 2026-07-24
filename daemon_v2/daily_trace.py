@@ -28,7 +28,7 @@ from .analysis.timeline import (
     _display_file_path,
     _display_time,
     _displayed_sessions,
-    _passive_sessions,
+    _unresolved_sessions,
     _trace_timezone,
     reconstruct_session_views,
 )
@@ -623,9 +623,17 @@ def build_daily_summary(
         )
     ]
 
+    unresolved_sessions = _unresolved_sessions(trace)
+    unresolved_activity_count = sum(
+        len(session["activities"]) for session in unresolved_sessions
+    )
     return {
         "session_count": len(_displayed_sessions(trace)),
-        "passive_activity_count": len(_passive_sessions(trace)),
+        "unresolved_session_count": len(unresolved_sessions),
+        "unresolved_activity_count": unresolved_activity_count,
+        # Deprecated compatibility field. Historically this counted grouped
+        # passive sections rather than individual activities.
+        "passive_activity_count": len(unresolved_sessions),
         "activity_count": trace["activity_count"],
         "terminal_count": terminal_count,
         "test_count": terminal_label_counts["test"],
@@ -771,13 +779,18 @@ def build_daily_trace(
         "session_count": len(merged_sessions),
         "sessions": merged_sessions,
     }
-    work_sessions, passive_sessions = reconstruct_session_views(
+    work_sessions, unresolved_sessions = reconstruct_session_views(
         trace,
         now=datetime.now(zone),
     )
     trace["work_session_count"] = len(work_sessions)
     trace["work_sessions"] = work_sessions
-    trace["passive_sessions"] = passive_sessions
+    trace["unresolved_sessions"] = unresolved_sessions
+    trace["unresolved_activity_count"] = sum(
+        len(session["activities"]) for session in unresolved_sessions
+    )
+    # Deprecated JSON alias retained temporarily for existing clients.
+    trace["passive_sessions"] = unresolved_sessions
     return trace
 
 

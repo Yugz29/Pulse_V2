@@ -15,12 +15,12 @@ from ..analysis.timeline import (
     _display_time,
     _displayed_sessions,
     _file_change_groups,
-    _passive_sessions,
     _ranked_apps,
     _session_duration,
     _session_has_recent_strong_activity,
     _session_observed_bounds,
     _trace_timezone,
+    _unresolved_sessions,
 )
 from ..daily_trace import (
     SummaryFact,
@@ -71,7 +71,7 @@ def render_daily_trace_markdown(
     current = build_current_state(trace) if not archive_mode else None
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
-    passive_sessions = _passive_sessions(trace)
+    unresolved_sessions = _unresolved_sessions(trace)
     trace_zone = _trace_timezone(trace)
     apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
@@ -140,7 +140,10 @@ def render_daily_trace_markdown(
         [
         "## Aujourd’hui",
         f"- Sessions de travail : {summary['session_count']}",
-        f"- Activités passives : {summary['passive_activity_count']}",
+        (
+            "- Activités non attribuées : "
+            f"{summary['unresolved_activity_count']}"
+        ),
         f"- Événements : {summary['activity_count']}",
         f"- Commandes terminal : {summary['terminal_count']}",
         f"- Tests : {summary['test_count']}",
@@ -152,7 +155,7 @@ def render_daily_trace_markdown(
         "",
         ]
     )
-    if not displayed_sessions and not passive_sessions:
+    if not displayed_sessions and not unresolved_sessions:
         lines.extend(["_Aucune activité._", ""])
         return "\n".join(lines)
 
@@ -360,29 +363,29 @@ def render_daily_trace_markdown(
                 lines.append(f"  - Workspace : {_markdown_text(workspace)}")
         lines.append("")
 
-    if passive_sessions:
+    if unresolved_sessions:
         lines.extend(
             [
-                "## Activité passive",
+                "## Activité non attribuée",
                 (
-                    "Ces signaux ont été observés mais ne sont pas considérés "
-                    "comme des sessions de travail."
+                    "Ces signaux témoignent d’une activité utilisateur, mais "
+                    "aucun workspace n’a été confirmé."
                 ),
             ]
         )
-        for session in passive_sessions:
-            passive_started_at, _passive_ended_at = _session_observed_bounds(
+        for session in unresolved_sessions:
+            unresolved_started_at, _unresolved_ended_at = _session_observed_bounds(
                 session
             )
-            passive_apps = [
+            unresolved_apps = [
                 _markdown_text(app)
                 for app, _count in _ranked_apps(
                     _app_activation_counts(session)
                 )
             ]
             lines.append(
-                f"- {_display_time(passive_started_at, trace_zone)} · "
-                f"{', '.join(passive_apps)}"
+                f"- {_display_time(unresolved_started_at, trace_zone)} · "
+                f"{', '.join(unresolved_apps)}"
             )
         lines.append("")
 

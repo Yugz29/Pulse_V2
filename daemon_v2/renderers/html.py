@@ -16,13 +16,13 @@ from ..analysis.timeline import (
     _display_time,
     _displayed_sessions,
     _file_change_groups,
-    _passive_sessions,
     _ranked_apps,
     _session_duration,
     _session_has_recent_strong_activity,
     _session_observed_bounds,
     _session_project_sequence,
     _trace_timezone,
+    _unresolved_sessions,
 )
 from ..daily_trace import (
     _session_project_summaries,
@@ -60,7 +60,7 @@ def render_daily_trace_html(
     current = build_current_state(trace) if not archive_mode else None
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
-    passive_sessions = _passive_sessions(trace)
+    unresolved_sessions = _unresolved_sessions(trace)
     trace_zone = _trace_timezone(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
@@ -213,7 +213,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
         (
             f'<div class="meta">{trace["activity_count"]} activité(s) · '
             f'{summary["session_count"]} session(s) de travail · '
-            f'{summary["passive_activity_count"]} activité(s) passive(s)</div>'
+            f'{summary["unresolved_activity_count"]} activité(s) non attribuée(s)</div>'
         ),
         "</header>",
     ]
@@ -278,8 +278,8 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             f"<dd>{summary['session_count']}</dd>"
         ),
         (
-            "<dt>Activités passives</dt>"
-            f"<dd>{summary['passive_activity_count']}</dd>"
+            "<dt>Activités non attribuées</dt>"
+            f"<dd>{summary['unresolved_activity_count']}</dd>"
         ),
         f"<dt>Événements</dt><dd>{summary['activity_count']}</dd>",
         f"<dt>Commandes terminal</dt><dd>{summary['terminal_count']}</dd>",
@@ -324,7 +324,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             ]
         )
 
-    if not displayed_sessions and not passive_sessions:
+    if not displayed_sessions and not unresolved_sessions:
         body.append("<p>Aucune activité pour cette journée.</p>")
 
     now = datetime.now(trace_zone)
@@ -500,28 +500,28 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             )
         body.extend(["</ul>", "</section>"])
 
-    if passive_sessions:
-        passive_items = []
-        for session in passive_sessions:
-            passive_started_at, _passive_ended_at = _session_observed_bounds(
+    if unresolved_sessions:
+        unresolved_items = []
+        for session in unresolved_sessions:
+            unresolved_started_at, _unresolved_ended_at = _session_observed_bounds(
                 session
             )
-            passive_apps = [
+            unresolved_apps = [
                 escape(str(app))
                 for app, _count in _ranked_apps(
                     _app_activation_counts(session)
                 )
             ]
-            passive_items.append(
-                f"<li>{escape(_display_time(passive_started_at, trace_zone))} · "
-                f"{', '.join(passive_apps)}</li>"
+            unresolved_items.append(
+                f"<li>{escape(_display_time(unresolved_started_at, trace_zone))} · "
+                f"{', '.join(unresolved_apps)}</li>"
             )
         body.append(
-            '<section class="summary" id="activite-passive">'
-            "<h2>Activité passive</h2>"
-            "<p>Ces signaux ont été observés mais ne sont pas considérés "
-            "comme des sessions de travail.</p>"
-            f"<ul>{''.join(passive_items)}</ul></section>"
+            '<section class="summary" id="activite-non-attribuee">'
+            "<h2>Activité non attribuée</h2>"
+            "<p>Ces signaux témoignent d’une activité utilisateur, mais "
+            "aucun workspace n’a été confirmé.</p>"
+            f"<ul>{''.join(unresolved_items)}</ul></section>"
         )
 
     body.extend(
