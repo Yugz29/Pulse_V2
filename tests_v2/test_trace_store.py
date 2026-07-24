@@ -93,7 +93,8 @@ def test_out_of_order_activity_reuses_session_containing_its_timestamp(tmp_path)
     assert "## Session 2 — 13:10–13:10 · 0 min" in markdown
     assert "## Activité passive" in markdown
     assert "- 12:50 · Code" in markdown
-    assert "Apps actives : Terminal, Code" in markdown
+    assert "Apps actives : Terminal, Code" not in markdown
+    assert "- 12:50 · Code, Terminal" in markdown
     assert "pytest tests_v2" in markdown
 
 

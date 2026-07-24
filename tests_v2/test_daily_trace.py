@@ -495,7 +495,7 @@ def test_renders_file_path_relative_to_workspace(tmp_path):
         "#### Pulse\\_V2\n"
         "- Fichiers modifiés : daemon\\_v2/daily\\_trace.py"
     ) in markdown
-    assert "- Projet : Pulse\\_V2" not in markdown
+    assert "- Projet : Pulse\\_V2" in markdown
     assert (
         '<div class="session-project-summary"><h4>Pulse_V2</h4>'
         "<ul><li>Fichiers modifiés : daemon_v2/daily_trace.py</li></ul>"
@@ -778,11 +778,11 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "Workspace : /project/Pulse",
         "App active : Terminal",
         "Dernière commande : `git push`",
-        "Session active depuis : 10:00",
+        "Session active depuis : 10:05",
         "Dernière activité utile : terminal\\_finished — git push",
         "## Aujourd’hui",
-        "Sessions de travail : 1",
-        "Activités passives : 0",
+        "Sessions de travail : 3",
+        "Activités passives : 1",
         "Événements : 7",
         "Commandes terminal : 1",
         "Fichiers modifiés : 3",
@@ -796,11 +796,11 @@ def test_renders_deterministic_daily_summary_in_markdown_and_html(tmp_path):
         "<dt>Workspace</dt><dd>/project/Pulse</dd>",
         "<dt>App active</dt><dd>Terminal</dd>",
         "<dt>Dernière commande</dt><dd>git push</dd>",
-        "<dt>Session active depuis</dt><dd>10:00</dd>",
+        "<dt>Session active depuis</dt><dd>10:05</dd>",
         "<dt>Dernière activité utile</dt><dd>terminal_finished — git push</dd>",
         "<h2>Aujourd’hui</h2>",
-        "<dt>Sessions de travail</dt><dd>1</dd>",
-        "<dt>Activités passives</dt><dd>0</dd>",
+        "<dt>Sessions de travail</dt><dd>3</dd>",
+        "<dt>Activités passives</dt><dd>1</dd>",
         "<dt>Événements</dt><dd>7</dd>",
         "<dt>Commandes terminal</dt><dd>1</dd>",
         "<dt>Fichiers modifiés</dt><dd>3</dd>",
@@ -1127,14 +1127,14 @@ def test_inspection_only_sessions_hide_empty_project_summaries(tmp_path):
     assert trace["session_count"] == 3
     assert markdown.count("#### Pulse") == 1
     assert html.count("<h4>Pulse</h4>") == 1
-    assert "- Apps actives : Code" in markdown
-    assert "Apps actives : Code" in html
+    assert "- 10:01 · Code" in markdown
+    assert "<li>10:01 · Code</li>" in html
     assert markdown.count(
         "_Aucun signal significatif dans cette session._"
-    ) == 1
+    ) == 2
     assert html.count(
         "<p>Aucun signal significatif dans cette session.</p>"
-    ) == 1
+    ) == 2
     assert with_apps in markdown
     assert without_apps in markdown
 
@@ -1615,16 +1615,16 @@ def test_hides_ignored_app_only_sessions_in_markdown_and_html(tmp_path):
         "loginwindow"
     ]
     assert "- Sessions de travail : 1" in markdown
-    assert "- Activités passives : 0" in markdown
+    assert "- Activités passives : 1" in markdown
     assert markdown.count("## Session ") == 1
     assert "Apps principales : ChatGPT" in markdown
-    assert "Apps actives : ChatGPT" in markdown
+    assert "- 09:01 · ChatGPT" in markdown
     assert "Finder" not in markdown
     assert "loginwindow" not in markdown
     assert "<dt>Sessions de travail</dt><dd>1</dd>" in html
-    assert "<dt>Activités passives</dt><dd>0</dd>" in html
+    assert "<dt>Activités passives</dt><dd>1</dd>" in html
     assert html.count('<section class="session" id="session-') == 1
-    assert "Apps actives : ChatGPT" in html
+    assert "<li>09:01 · ChatGPT</li>" in html
     assert "Finder" not in html
     assert "loginwindow" not in html
 
@@ -1781,25 +1781,24 @@ def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
     trace = build_daily_trace(store, date(2026, 7, 3), timezone.utc)
     markdown = render_daily_trace_markdown(trace)
     html = render_daily_trace_html(trace)
-    timeline = markdown.split("## Session 1", 1)[1]
-    timeline_lines = timeline.splitlines()
+    timeline_lines = markdown.splitlines()
 
     assert trace["session_count"] == 1
     assert timeline_lines.count("### Pulse\\_V2") == 2
     assert timeline_lines.count("### Pulse\\_Sandbox") == 1
     assert "### TEST" not in timeline_lines
-    assert f"  - CWD : {weak_parent}" in timeline
+    assert f"  - CWD : {weak_parent}" in markdown
     assert html.count('class="project-separator"') == 3
     assert (
         '<a class="nav-project" href="#session-1-projet-1">Pulse_V2</a>'
         in html
     )
     assert (
-        '<a class="nav-project" href="#session-1-projet-2">'
+        '<a class="nav-project" href="#session-2-projet-1">'
         "Pulse_Sandbox</a>"
     ) in html
     assert (
-        '<a class="nav-project" href="#session-1-projet-3">Pulse_V2</a>'
+        '<a class="nav-project" href="#session-3-projet-1">Pulse_V2</a>'
         in html
     )
     assert (
@@ -1808,10 +1807,10 @@ def test_timeline_marks_project_changes_but_keeps_weak_cwd_as_detail(tmp_path):
     )
     assert (
         'class="project-separator" '
-        'id="session-1-projet-2">Pulse_Sandbox</li>'
+        'id="session-2-projet-1">Pulse_Sandbox</li>'
     ) in html
     assert (
-        'class="project-separator" id="session-1-projet-3">Pulse_V2</li>'
+        'class="project-separator" id="session-3-projet-1">Pulse_V2</li>'
         in html
     )
     assert 'class="nav-project"' in html

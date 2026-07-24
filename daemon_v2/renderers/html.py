@@ -22,6 +22,7 @@ from ..analysis.timeline import (
     _session_has_recent_strong_activity,
     _session_observed_bounds,
     _session_project_sequence,
+    _trace_timezone,
 )
 from ..daily_trace import (
     _session_project_summaries,
@@ -60,6 +61,7 @@ def render_daily_trace_html(
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
     passive_sessions = _passive_sessions(trace)
+    trace_zone = _trace_timezone(trace)
     apps = [escape(str(app)) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
         f'<span title="{escape(path)}">'
@@ -325,12 +327,12 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
     if not displayed_sessions and not passive_sessions:
         body.append("<p>Aucune activité pour cette journée.</p>")
 
-    now = datetime.now().astimezone()
+    now = datetime.now(trace_zone)
     current_day = now.date().isoformat()
     for index, session in enumerate(displayed_sessions, start=1):
         observed_start, observed_end = _session_observed_bounds(session)
-        started_at = _display_time(observed_start)
-        ended_at = _display_time(observed_end)
+        started_at = _display_time(observed_start, trace_zone)
+        ended_at = _display_time(observed_end, trace_zone)
         duration = _session_duration(session)
         in_progress = (
             " · en cours"
@@ -492,7 +494,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
             )
             body.append(
                 '<li class="event">'
-                f'<time>{_display_time(activity["occurred_at"])}</time>'
+                f'<time>{_display_time(activity["occurred_at"], trace_zone)}</time>'
                 f'<span class="type">{type_html}</span>'
                 f'<div class="content">{content}{detail_html}</div></li>'
             )
@@ -511,7 +513,7 @@ grid-column:2}.current,.resume,.summary,.system,.session{padding:1rem}}
                 )
             ]
             passive_items.append(
-                f"<li>{escape(_display_time(passive_started_at))} · "
+                f"<li>{escape(_display_time(passive_started_at, trace_zone))} · "
                 f"{', '.join(passive_apps)}</li>"
             )
         body.append(

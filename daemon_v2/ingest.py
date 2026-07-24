@@ -73,6 +73,25 @@ def _parse_occurred_at(value: Any) -> datetime:
     return parsed
 
 
+def _copy_persisted_context(
+    payload: dict[str, Any],
+    details: dict[str, Any],
+) -> None:
+    """Preserve producer-resolved context without recalculating it in Core."""
+    workspace = payload.get("workspace")
+    if isinstance(workspace, str) and workspace.strip():
+        details["workspace"] = workspace
+    elif isinstance(workspace, dict):
+        details["workspace"] = dict(workspace)
+
+    git = payload.get("git")
+    if isinstance(git, dict):
+        details["git"] = dict(git)
+    git_root = payload.get("git_root")
+    if isinstance(git_root, str) and git_root.strip():
+        details["git_root"] = git_root.strip()
+
+
 def redact_command(command: str) -> str:
     redacted = _SENSITIVE_OPTION.sub(r"\1=[REDACTED]", command)
     return _ENV_SECRET.sub(r"\1=[REDACTED]", redacted)
@@ -147,9 +166,11 @@ def normalize_activity(payload: Any) -> Activity:
             )
         normalized_path = str(Path(path).expanduser().absolute())
         details = {"path": normalized_path, "event": event}
-        if "workspace" in payload:
-            workspace = _required_string(payload, "workspace")
-            details["workspace"] = str(Path(workspace).expanduser().absolute())
+        _copy_persisted_context(payload, details)
+        if isinstance(details.get("workspace"), str):
+            details["workspace"] = str(
+                Path(details["workspace"]).expanduser().absolute()
+            )
         source = "filesystem"
         summary = f"{event.capitalize()} {normalized_path}"
     elif activity_type == "terminal_finished":
@@ -166,12 +187,16 @@ def normalize_activity(payload: Any) -> Activity:
         for key in ("started_at", "finished_at"):
             if key in payload:
                 details[key] = _parse_occurred_at(payload[key]).isoformat()
+        _copy_persisted_context(payload, details)
         source = "terminal"
         status = "succeeded" if exit_code == 0 else f"failed ({exit_code})"
         summary = f"Command {status}: {command}"
     elif activity_type == "app_activated":
         app = _required_string(payload, "app")
         details = {"app": app}
+        bundle_id = payload.get("bundle_id")
+        if isinstance(bundle_id, str) and bundle_id.strip():
+            details["bundle_id"] = bundle_id.strip()
         if "title" in payload:
             details["title"] = _required_string(payload, "title")
         source = "application"

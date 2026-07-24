@@ -20,6 +20,9 @@ IGNORED_DIRECTORY_NAMES = {
     ".swiftpm",
     ".venv",
     "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
 }
 IGNORED_FILE_NAMES = {".DS_Store"}
 IGNORED_FILE_SUFFIXES = {".pyc", ".db"}

@@ -305,7 +305,7 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
             {
                 "date": "2026-07-04",
                 "event_count": 7,
-                "session_count": 1,
+                "session_count": 3,
                 "projects": ["Pulse_V2", "Pulse_Sandbox"],
                 "summary": [
                     "Pulse_V2, Pulse_Sandbox — 1 commit · 2 fichiers touchés "
@@ -365,7 +365,7 @@ def test_trace_days_lists_available_days_newest_first(tmp_path):
     assert html.index("<h2>2026-07-04</h2>") < html.index(
         "<h2>2026-07-03</h2>"
     )
-    assert "7 événements · 1 session" in html
+    assert "7 événements · 3 sessions" in html
     assert '<p class="day-project-count">2 Projets</p>' in html
     assert '<p class="day-project-count">1 Projet</p>' in html
     assert "Projets :" not in html

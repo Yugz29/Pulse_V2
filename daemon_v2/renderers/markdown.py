@@ -20,6 +20,7 @@ from ..analysis.timeline import (
     _session_duration,
     _session_has_recent_strong_activity,
     _session_observed_bounds,
+    _trace_timezone,
 )
 from ..daily_trace import (
     SummaryFact,
@@ -71,6 +72,7 @@ def render_daily_trace_markdown(
     resume = build_resume(trace) if not archive_mode else []
     displayed_sessions = _displayed_sessions(trace)
     passive_sessions = _passive_sessions(trace)
+    trace_zone = _trace_timezone(trace)
     apps = [_markdown_text(app) for app, _count in _ranked_apps(summary["apps"])]
     projects = [
         _markdown_text(resolve_project_context(path).project_name)
@@ -154,12 +156,12 @@ def render_daily_trace_markdown(
         lines.extend(["_Aucune activité._", ""])
         return "\n".join(lines)
 
-    now = datetime.now().astimezone()
+    now = datetime.now(trace_zone)
     current_day = now.date().isoformat()
     for index, session in enumerate(displayed_sessions, start=1):
         observed_start, observed_end = _session_observed_bounds(session)
-        started_at = _display_time(observed_start)
-        ended_at = _display_time(observed_end)
+        started_at = _display_time(observed_start, trace_zone)
+        ended_at = _display_time(observed_end, trace_zone)
         duration = _session_duration(session)
         in_progress = (
             " · en cours"
@@ -175,6 +177,52 @@ def render_daily_trace_markdown(
                 "",
             ]
         )
+        if "end_reason" in session:
+            end_labels = {
+                "screen_locked": "écran verrouillé",
+                "system_sleep": "mise en veille",
+                "inactivity": "inactivité",
+                "workspace_changed": "changement de workspace",
+                "day_boundary": "fin de journée",
+                "open": "en cours",
+            }
+            project_name = session.get("project_name") or "Non identifié"
+            applications = session.get("applications", [])
+            lines.extend(
+                [
+                    f"- Projet : {_markdown_text(project_name)}",
+                    f"- Durée calendaire : {duration}",
+                    (
+                        "- Durée active : "
+                        f"{session.get('active_duration_seconds', 0) // 60} min"
+                    ),
+                    f"- Fichiers modifiés : {session.get('files_changed', 0)}",
+                    (
+                        "- Commandes exécutées : "
+                        f"{session.get('commands_executed', 0)}"
+                    ),
+                    (
+                        "- Applications : "
+                        + (
+                            ", ".join(_markdown_text(app) for app in applications)
+                            if applications
+                            else "Aucune"
+                        )
+                    ),
+                    (
+                        "- Interruptions : "
+                        f"{len(session.get('interruptions', []))}"
+                    ),
+                    (
+                        "- Fin : "
+                        + end_labels.get(
+                            session.get("end_reason"),
+                            _markdown_text(session.get("end_reason")),
+                        )
+                    ),
+                    "",
+                ]
+            )
         project_summaries = _session_project_summaries(
             session, project_workspaces
         )
@@ -207,7 +255,7 @@ def render_daily_trace_markdown(
         rendered_project = None
 
         for activity in session["activities"]:
-            occurred_at = _display_time(activity["occurred_at"])
+            occurred_at = _display_time(activity["occurred_at"], trace_zone)
             activity_type = _markdown_text(activity["type"])
             details = activity.get("details", {})
             command = details.get("command")
@@ -333,7 +381,7 @@ def render_daily_trace_markdown(
                 )
             ]
             lines.append(
-                f"- {_display_time(passive_started_at)} · "
+                f"- {_display_time(passive_started_at, trace_zone)} · "
                 f"{', '.join(passive_apps)}"
             )
         lines.append("")

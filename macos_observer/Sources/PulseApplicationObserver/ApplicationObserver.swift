@@ -8,6 +8,7 @@ final class ApplicationObserver: @unchecked Sendable {
     private let notificationCenter = NSWorkspace.shared.notificationCenter
     private let bridge: OutboxBridge
     private let builder: CanonicalEventBuilder
+    private let activationFilter = ApplicationActivationFilter()
     private var deduplicator = ApplicationDeduplicator()
     private var activationToken: NSObjectProtocol?
 
@@ -23,12 +24,17 @@ final class ApplicationObserver: @unchecked Sendable {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let application = notification.userInfo?[
+            guard let notifiedApplication = notification.userInfo?[
                 NSWorkspace.applicationUserInfoKey
-            ] as? NSRunningApplication else {
+            ] as? NSRunningApplication,
+            let frontmostApplication = NSWorkspace.shared.frontmostApplication,
+            self?.activationFilter.isFrontmostActivation(
+                notifiedProcessID: notifiedApplication.processIdentifier,
+                frontmostProcessID: frontmostApplication.processIdentifier
+            ) == true else {
                 return
             }
-            self?.observe(application)
+            self?.observe(frontmostApplication)
         }
 
         if let current = NSWorkspace.shared.frontmostApplication {
@@ -53,11 +59,11 @@ final class ApplicationObserver: @unchecked Sendable {
         guard !deduplicator.isDuplicate(context) else {
             return
         }
+        deduplicator.record(context)
 
         do {
             let payload = try builder.build(context: context)
             try bridge.enqueue(payload: payload)
-            deduplicator.record(context)
         } catch {
             FileHandle.standardError.write(
                 Data("Pulse ApplicationObserver: \(error)\n".utf8)

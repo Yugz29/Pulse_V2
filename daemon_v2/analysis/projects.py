@@ -41,8 +41,21 @@ class ProjectContext:
 
 def activity_workspace(activity: dict[str, Any]) -> str | None:
     details = activity.get("details", {})
-    if details.get("workspace"):
-        return details["workspace"]
+    workspace = details.get("workspace")
+    if isinstance(workspace, dict):
+        workspace_root = workspace.get("workspace_root")
+        if isinstance(workspace_root, str) and workspace_root:
+            return workspace_root
+    elif isinstance(workspace, str) and workspace:
+        return workspace
+    git = details.get("git")
+    if isinstance(git, dict):
+        git_root = git.get("git_root")
+        if isinstance(git_root, str) and git_root:
+            return git_root
+    git_root = details.get("git_root")
+    if isinstance(git_root, str) and git_root:
+        return git_root
     if activity["type"] == "terminal_finished" and details.get("cwd"):
         return details["cwd"]
     return None
@@ -168,6 +181,8 @@ def most_frequent_explicit_workspace(
     for session in trace["sessions"]:
         for activity in session["activities"]:
             workspace = activity.get("details", {}).get("workspace")
+            if isinstance(workspace, dict):
+                workspace = workspace.get("workspace_root")
             if workspace and not is_weak_workspace(workspace):
                 project_root = resolve_project_context(workspace).project_root
                 counts[project_root] = counts.get(project_root, 0) + 1

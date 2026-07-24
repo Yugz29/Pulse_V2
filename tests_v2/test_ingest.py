@@ -174,6 +174,90 @@ def test_normalizes_complete_canonical_event():
     assert "unused_top_level" not in ingested.activity.details
 
 
+def test_preserves_enriched_terminal_context_sent_by_producer():
+    workspace = {
+        "project_name": "Pulse_Core",
+        "workspace_root": "/project/Pulse_Core",
+        "git_root": "/project/Pulse_Core",
+        "resolution_method": "git",
+        "resolution_confidence": "high",
+    }
+    git = {
+        "repository": "Pulse_Core",
+        "git_root": "/project/Pulse_Core",
+        "branch": "main",
+        "head": "1234567",
+        "dirty": False,
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+    }
+    ingested = normalize_event(
+        canonical_payload(
+            type="terminal_finished",
+            details={
+                "command": "git status",
+                "exit_code": 0,
+                "cwd": "/project/Pulse_Core",
+                "workspace": workspace,
+                "git": git,
+            },
+        )
+    )
+
+    assert ingested.activity.details["workspace"] == workspace
+    assert ingested.activity.details["git"] == git
+
+
+def test_preserves_object_workspace_for_file_event():
+    workspace = {
+        "project_name": "Pulse_Core",
+        "workspace_root": "/project/Pulse_Core",
+    }
+    ingested = normalize_event(
+        canonical_payload(
+            details={
+                "path": "/project/Pulse_Core/main.py",
+                "event": "modified",
+                "workspace": workspace,
+            }
+        )
+    )
+
+    assert ingested.activity.details["workspace"] == workspace
+
+
+def test_preserves_historical_direct_git_root():
+    ingested = normalize_event(
+        canonical_payload(
+            details={
+                "path": "/project/Pulse_Core/main.py",
+                "event": "modified",
+                "git_root": "/project/Pulse_Core",
+            }
+        )
+    )
+
+    assert ingested.activity.details["git_root"] == "/project/Pulse_Core"
+
+
+def test_preserves_application_bundle_identifier():
+    ingested = normalize_event(
+        canonical_payload(
+            type="app_activated",
+            details={
+                "app": "Visual Studio Code",
+                "bundle_id": "com.microsoft.VSCode",
+            },
+        )
+    )
+
+    assert ingested.activity.details == {
+        "app": "Visual Studio Code",
+        "bundle_id": "com.microsoft.VSCode",
+    }
+
+
 @pytest.mark.parametrize(
     ("change", "field"),
     [

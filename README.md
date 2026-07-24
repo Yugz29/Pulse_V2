@@ -360,7 +360,7 @@ daemon_v2/
   pour préparer les timelines.
 - `renderers/html.py` et `renderers/markdown.py` produisent les représentations
   finales sans template engine.
-- `app_watcher.py` et `file_watcher.py` collectent les signaux locaux ; le
+- `file_watcher.py` collecte les changements de fichiers ; le
   watcher terminal reste un script Zsh externe.
 
 ## Watcher terminal
@@ -393,6 +393,20 @@ Lancer manuellement le watcher par polling avec un workspace explicite :
 Il envoie les fichiers créés, modifiés et supprimés au daemon local Pulse. Les chemins techniques comme `.git`, `.venv`, les caches, `*.pyc`, `*.db` et `.DS_Store` sont ignorés. Le watcher continue de tourner silencieusement si le daemon est indisponible. L’arrêter avec `Ctrl-C`.
 
 ## Observateur d’application
+
+`daemon_v2.app_watcher` est l’ancien observateur par polling. Il ne doit plus
+être lancé : il envoyait des payloads legacy directement à Core et doublonnait
+les activations produites par l’observateur Swift. `make dev` lance uniquement
+`PulseApplicationObserver`.
+
+Le watcher fichiers exclut les répertoires techniques `.build`, `.git`,
+`.venv`, `__pycache__`, `.pytest_cache`, `node_modules`, `dist` et `build`.
+Ils ne produisent donc pas d’événements `file_changed`.
+
+La reconstruction considère les verrouillages et mises en veille comme des
+interruptions candidates. Une reprise dans le même workspace conserve la
+session lorsque l’interruption ne dépasse pas cinq minutes. Ce seuil peut être
+adapté avec `PULSE_SESSION_INTERRUPTION_MINUTES`.
 
 Sur macOS, `make dev` lance `PulseApplicationObserver`, fondé sur
 `NSWorkspace`. L’ancien watcher Python n’est plus lancé par le superviseur.

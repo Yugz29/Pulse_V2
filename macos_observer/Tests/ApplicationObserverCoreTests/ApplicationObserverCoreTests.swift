@@ -62,6 +62,24 @@ func initialApplicationIsRecordedAndFirstNotificationIsDeduplicated() {
 }
 
 @Test
+func onlyTheActuallyFrontmostActivationIsAccepted() {
+    let filter = ApplicationActivationFilter()
+
+    #expect(
+        filter.isFrontmostActivation(
+            notifiedProcessID: 42,
+            frontmostProcessID: 42
+        )
+    )
+    #expect(
+        !filter.isFrontmostActivation(
+            notifiedProcessID: 41,
+            frontmostProcessID: 42
+        )
+    )
+}
+
+@Test
 func canonicalPayloadContainsOnlyAllowedApplicationDetails() throws {
     let context = ApplicationContext(
         name: "Visual Studio Code",

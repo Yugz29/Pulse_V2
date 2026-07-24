@@ -29,6 +29,8 @@ from .analysis.timeline import (
     _display_time,
     _displayed_sessions,
     _passive_sessions,
+    _trace_timezone,
+    reconstruct_session_views,
 )
 from .trace_store import TraceStore
 
@@ -288,7 +290,10 @@ def build_current_state(trace: dict[str, Any]) -> dict[str, Any]:
         "command": last_command or "Non détectée",
         "recent_files": recent_files,
         "session_started_at": (
-            _display_time(current_session["started_at"])
+            _display_time(
+                current_session["started_at"],
+                _trace_timezone(trace),
+            )
             if current_session
             else "Non détectée"
         ),
@@ -724,21 +729,56 @@ def build_daily_trace(
             previous = merged_sessions[-1]
             previous["activities"] = sorted(
                 previous["activities"] + session["activities"],
-                key=lambda activity: (activity["occurred_at"], activity["id"]),
+                key=lambda activity: (
+                    datetime.fromisoformat(activity["occurred_at"]),
+                    activity["id"],
+                ),
             )
-            previous["started_at"] = previous["activities"][0]["occurred_at"]
-            previous["ended_at"] = previous["activities"][-1]["occurred_at"]
+            previous["started_at"] = (
+                datetime.fromisoformat(
+                    previous["activities"][0]["occurred_at"]
+                )
+                .astimezone(zone)
+                .isoformat()
+            )
+            previous["ended_at"] = (
+                datetime.fromisoformat(
+                    previous["activities"][-1]["occurred_at"]
+                )
+                .astimezone(zone)
+                .isoformat()
+            )
             previous["activity_count"] = len(previous["activities"])
         else:
             merged_sessions.append(session)
 
-    return {
+    zone_key = getattr(zone, "key", None)
+    if zone_key:
+        zone_name = zone_key
+    elif zone == timezone.utc:
+        zone_name = "UTC"
+    else:
+        offset = start.utcoffset() or timedelta(0)
+        total_minutes = int(offset.total_seconds() // 60)
+        sign = "+" if total_minutes >= 0 else "-"
+        hours, minutes = divmod(abs(total_minutes), 60)
+        zone_name = f"{sign}{hours:02d}:{minutes:02d}"
+
+    trace = {
         "date": selected_day.isoformat(),
-        "timezone": str(zone),
+        "timezone": zone_name,
         "activity_count": len(activities),
         "session_count": len(merged_sessions),
         "sessions": merged_sessions,
     }
+    work_sessions, passive_sessions = reconstruct_session_views(
+        trace,
+        now=datetime.now(zone),
+    )
+    trace["work_session_count"] = len(work_sessions)
+    trace["work_sessions"] = work_sessions
+    trace["passive_sessions"] = passive_sessions
+    return trace
 
 
 def build_available_days(
