@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from daemon_v2.daily_trace import build_daily_trace
 from daemon_v2.main import create_app
 from daemon_v2.models import Activity
 
@@ -554,6 +555,54 @@ def test_status_reports_local_paths_and_today_activity(tmp_path):
     assert status["last_event"]["type"] == "file_changed"
     assert status["primary_workspace"] == "/project"
     assert status["terminal_watcher"].startswith("external")
+
+
+def test_status_and_today_json_accept_persisted_workspace_identity(tmp_path):
+    database_path = tmp_path / "trace.db"
+    app = create_app(database_path)
+    client = app.test_client()
+    occurred_at = datetime.now().astimezone().isoformat()
+    response = client.post(
+        "/activities",
+        json={
+            "event_id": "workspace-status-regression",
+            "schema_version": 1,
+            "type": "terminal_finished",
+            "producer": {
+                "name": "pulse-test",
+                "version": "1",
+                "instance_id": "status-regression",
+            },
+            "occurred_at": occurred_at,
+            "details": {
+                "command": "git status",
+                "exit_code": 0,
+                "cwd": "/project/Pulse_Core",
+                "workspace": {
+                    "project_name": "Pulse_Core",
+                    "workspace_root": "/project/Pulse_Core",
+                    "git_root": "/project/Pulse_Core",
+                    "resolution_method": "git",
+                    "resolution_confidence": "high",
+                },
+            },
+        },
+    )
+    assert response.status_code == 201
+
+    trace = build_daily_trace(app.config["TRACE_STORE"])
+    assert trace["work_sessions"][0]["project_name"] == "Pulse_Core"
+    assert trace["work_sessions"][0]["workspace_root"] == "/project/Pulse_Core"
+
+    status_response = client.get("/status")
+    json_response = client.get("/trace/today.json")
+
+    assert status_response.status_code == 200
+    assert status_response.get_json()["displayed_session_count"] == 1
+    assert json_response.status_code == 200
+    assert json_response.get_json()["work_sessions"][0]["project_name"] == (
+        "Pulse_Core"
+    )
 
 
 def test_pulse_inspection_command_is_stored_as_raw_timeline_event(tmp_path):

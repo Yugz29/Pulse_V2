@@ -134,6 +134,7 @@ def post_activity():
 
 
 @api.get("/trace/today")
+@api.get("/trace/today.json")
 def get_today_trace():
     trace = build_daily_trace(current_app.config["TRACE_STORE"])
     return jsonify(trace)
